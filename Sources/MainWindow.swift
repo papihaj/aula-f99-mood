@@ -61,18 +61,6 @@ struct MainView: View {
             Card(padding: 12) {
                 if model.musicOn && model.hearingNothing { NotHearingBanner() }
                 MusicControls()
-                HStack(spacing: 16) {
-                    Toggle("Reduced flashing", isOn: Binding(get: { model.settings.reducedFlashing },
-                                                             set: { model.setReducedFlashing($0) }))
-                    Toggle("Strip matches colours", isOn: Binding(get: { model.settings.stripFollowsColors },
-                                                                   set: { model.setStripFollowsColors($0) }))
-                    Toggle("Keep every key lit", isOn: Binding(get: { model.settings.keepKeysLit },
-                                                               set: { model.setKeepKeysLit($0) }))
-                        .help("Keeps letters readable in live effects and music")
-                }
-                .toggleStyle(.checkbox)
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
         }
         .padding(20)

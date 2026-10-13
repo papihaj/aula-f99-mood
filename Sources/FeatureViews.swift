@@ -359,21 +359,13 @@ struct AlertsTab: View {
                     Text("As it starts").tag(0)
                     ForEach([1, 2, 5, 10, 15], id: \.self) { Text("\($0) minute\($0 == 1 ? "" : "s") before").tag($0) }
                 }
-                ColorPicker("Colour", selection: Binding(get: { model.settings.alertColor.color },
-                                                         set: { model.settings.alertColor = RGB($0) }), supportsOpacity: false)
-                Stepper("Flashes: \(model.settings.alertFlashes)", value: $model.settings.alertFlashes, in: 1...6)
-                HStack {
-                    Button("Test flash") { model.flash(color: model.settings.alertColor, times: model.settings.alertFlashes) }
-                    if model.settings.calendarAlerts, let next = model.calendar.nextEvent() {
-                        Text("Next: \(next.title ?? "Event") at \(next.startDate.formatted(date: .omitted, time: .shortened))")
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
+                .disabled(!model.settings.calendarAlerts)
+                if model.settings.calendarAlerts, let next = model.calendar.nextEvent() {
+                    Text("Next: \(next.title ?? "Event") at \(next.startDate.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             } header: {
                 Text("Calendar")
-            } footer: {
-                Text("Uses the Calendar app. Skips all-day events.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
@@ -390,29 +382,10 @@ struct AlertsTab: View {
                 }
             } header: {
                 Text("Mail")
-            } footer: {
-                Text("Checks Mail's unread count every 30 seconds.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
                 Toggle("Turn the light strip a colour while an alert is waiting", isOn: $model.settings.stripAlerts)
-                HStack(spacing: 8) {
-                    Text("Strip colour")
-                    Spacer()
-                    ForEach(F99.colors) { c in
-                        let on = model.settings.stripAlertColor == c.id
-                        Button { model.settings.stripAlertColor = c.id } label: {
-                            Circle().fill(c.swiftUI).frame(width: 20, height: 20)
-                                .overlay(Circle().strokeBorder(.black.opacity(0.12), lineWidth: 0.5))
-                                .padding(2.5)
-                                .overlay(Circle().strokeBorder(on ? Color.accentColor : .clear, lineWidth: 2))
-                        }
-                        .buttonStyle(.plain).help(c.name).accessibilityLabel(c.name)
-                        .accessibilityAddTraits(on ? .isSelected : [])
-                    }
-                }
-                .disabled(!model.settings.stripAlerts)
                 if let alert = model.stripAlert {
                     HStack {
                         Label(alert, systemImage: "bell.fill").foregroundStyle(.pink)
@@ -420,21 +393,12 @@ struct AlertsTab: View {
                         Button("Clear") { model.clearAlert() }
                     }
                 }
-                Button("Test an alert") {
-                    model.raiseAlert("Test alert", until: Date().addingTimeInterval(20), mail: false)
-                }
             } header: {
                 Text("Light strip")
-            } footer: {
-                Text("The strip changes colour until the alert is over.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
-                Toggle("Show how far through the song you are", isOn: $model.settings.nowPlayingBar)
-                ColorPicker("Bar colour", selection: Binding(get: { model.settings.nowPlayingColor.color },
-                                                             set: { model.settings.nowPlayingColor = RGB($0) }), supportsOpacity: false)
-                    .disabled(!model.settings.nowPlayingBar)
+                Toggle("Show song progress on the keys beside the strip", isOn: $model.settings.nowPlayingBar)
                 if model.settings.nowPlayingBar {
                     if model.nowPlayingNotAllowed {
                         HStack {
@@ -454,9 +418,6 @@ struct AlertsTab: View {
                 }
             } header: {
                 Text("Now playing")
-            } footer: {
-                Text("The keys beside the strip fill up as the song plays.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -465,12 +426,11 @@ struct AlertsTab: View {
 
 // MARK: Typing sounds
 
-struct SoundsTab: View {
+struct SoundsSection: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        Form {
-            Section {
+            Section("Typing sounds") {
                 Toggle("Play a sound when I type", isOn: $model.settings.keySounds)
                 Picker("Sound", selection: $model.settings.keySound) {
                     ForEach(KeySound.allCases) { Text($0.rawValue).tag($0) }
@@ -494,15 +454,7 @@ struct SoundsTab: View {
                 if let error = model.keySoundError, model.settings.keySounds {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
-                if model.needsAccessibility { AccessibilityBanner(compact: false) }
-            } header: {
-                Text("Typing sounds")
-            } footer: {
-                Text("Needs Accessibility permission.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-        }
-        .formStyle(.grouped)
     }
 
     private func chooseFile() {

@@ -1,121 +1,60 @@
 import SwiftUI
 import IOKit.hid
 
-/// "Keep every key lit" and how bright, used in a few places.
-struct KeepLitControls: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        Toggle("Keep every key lit", isOn: Binding(get: { model.settings.keepKeysLit },
-                                                   set: { model.setKeepKeysLit($0) }))
-        if model.settings.keepKeysLit {
-            HStack {
-                Text("At least")
-                Slider(value: Binding(get: { model.settings.keysLitLevel }, set: { model.setKeysLitLevel($0) }),
-                       in: 0.2...0.8)
-                Text("\(Int((model.settings.keysLitLevel * 100).rounded()))%").monospacedDigit().frame(width: 40)
-            }
-        }
-        Text("Keeps letters readable in live effects and music.")
-            .font(.caption).foregroundStyle(.secondary)
-    }
-}
-
-/// Everything about how the lights behave: brightness floor, key presses,
-/// idle and lock.
-struct LightsTab: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        Form {
-            Section("Brightness") {
-                KeepLitControls()
-            }
-            Section("Light up keys I press") {
-                Picker("In", selection: Binding(get: { model.settings.pressGlow },
-                                                set: { model.settings.pressGlow = $0; model.updatePressGlow() })) {
-                    ForEach(PressGlow.allCases) { Text($0.rawValue).tag($0) }
-                }
-                if model.settings.pressGlow != .off {
-                    Picker("Colour", selection: Binding(get: { model.settings.pressColor },
-                                                        set: { model.settings.pressColor = $0; model.updatePressGlow() })) {
-                        ForEach(PressColor.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    if model.settings.pressColor == .custom {
-                        ColorPicker("My colour", selection: Binding(
-                            get: { model.settings.pressCustomColor.color },
-                            set: { model.settings.pressCustomColor = RGB($0); model.updatePressGlow() }),
-                                    supportsOpacity: false)
-                    }
-                    HStack {
-                        Text("Halo")
-                        Slider(value: Binding(get: { model.settings.pressHalo },
-                                              set: { model.settings.pressHalo = $0; model.updatePressGlow() }), in: 0...2)
-                        Text(model.settings.pressHalo < 0.05 ? "none" : model.settings.pressHalo < 0.75 ? "small"
-                             : model.settings.pressHalo < 1.4 ? "medium" : "large").frame(width: 56)
-                    }
-                    HStack {
-                        Text("Fades in")
-                        Slider(value: Binding(get: { model.settings.pressFade },
-                                              set: { model.settings.pressFade = $0; model.updatePressGlow() }), in: 0.15...1.5)
-                        Text(String(format: "%.1f s", model.settings.pressFade)).monospacedDigit().frame(width: 56)
-                    }
-                }
-                Text("Needs Accessibility permission.")
-                    .font(.caption).foregroundStyle(.secondary)
-                if model.needsAccessibility { AccessibilityBanner(compact: false) }
-            }
-            Section("When I'm away") {
-                Picker("Dim live effects and music after", selection: $model.settings.dimAfterMinutes) {
-                    Text("Never").tag(0)
-                    ForEach([1, 2, 5, 10, 15, 30], id: \.self) { Text("\($0) minute\($0 == 1 ? "" : "s")").tag($0) }
-                }
-                Toggle("Lights off while the screen is locked or asleep", isOn: $model.settings.darkWhenLocked)
-                Text("They come back when you unlock.").font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-/// App-wide options.
-struct GeneralTab: View {
+/// The Settings pane: lights, typing sounds, start-up, appearance, the
+/// keyboard connection and permissions, on one page.
+struct SettingsTab: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var loginError = ViewState<String?>(nil)
     @StateObject private var confirmReset = ViewState(false)
-    @Environment(\.openWindow) private var openWindow
+    @StateObject private var confirmRestore = ViewState(false)
 
     var body: some View {
         Form {
-            Section("Start-up") {
-                Toggle("Open F99 Mood when I log in", isOn: Binding(
+            if model.needsAccessibility { AccessibilityBanner(compact: false) }
+            Section("Lights") {
+                Toggle("Keep every key lit", isOn: Binding(get: { model.settings.keepKeysLit },
+                                                           set: { model.setKeepKeysLit($0) }))
+                Picker("Light up keys I press", selection: Binding(get: { model.settings.pressGlow },
+                                                                   set: { model.settings.pressGlow = $0; model.updatePressGlow() })) {
+                    ForEach(PressGlow.allCases) { Text($0.rawValue).tag($0) }
+                }
+                Toggle("Strip matches colours", isOn: Binding(get: { model.settings.stripFollowsColors },
+                                                              set: { model.setStripFollowsColors($0) }))
+                Picker("Dim when I'm away", selection: $model.settings.dimAfterMinutes) {
+                    Text("Never").tag(0)
+                    ForEach([1, 2, 5, 10, 15, 30], id: \.self) { Text("After \($0) min").tag($0) }
+                }
+                Toggle("Lights off while locked", isOn: $model.settings.darkWhenLocked)
+            }
+            SoundsSection()
+            Section("General") {
+                Toggle("Open at login", isOn: Binding(
                     get: { model.launchesAtLogin },
                     set: { loginError.value = model.setLaunchAtLogin($0) }))
                 if let error = loginError.value { Text(error).font(.caption).foregroundStyle(.red) }
                 Picker("Start-up mood", selection: Binding(get: { model.settings.startupMoodID },
                                                            set: { model.setStartupMood($0) })) {
-                    Text("None: keep the keyboard's own lighting").tag(UUID?.none)
+                    Text("None").tag(UUID?.none)
                     ForEach(model.settings.moods) { Text($0.name).tag(UUID?.some($0.id)) }
                 }
-            }
-            Section("Appearance") {
-                Picker("Windows", selection: $model.settings.appearance) {
+                Picker("Appearance", selection: $model.settings.appearance) {
                     ForEach(Appearance.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 Toggle("Show in the Dock", isOn: Binding(get: { model.settings.showInDock },
                                                          set: { model.setShowInDock($0) }))
-                Text("F99 Mood is always in the menu bar (the keyboard icon).").font(.caption).foregroundStyle(.secondary)
-                Button("Show the welcome screen again") {
-                    model.settings.welcomeDone = false
-                    model.pane = .home // the welcome sheet belongs to Home
+            }
+            Section("Keyboard") {
+                StatusLine()
+                HStack {
+                    Button("Reconnect") { model.connect() }.disabled(model.busy)
+                    Button("Restore original lighting…") { confirmRestore.value = true }
+                        .disabled(!model.canWrite || !model.hasBackup || model.busy)
                 }
             }
             PermissionsSection()
-            Section("Your settings") {
-                LabeledContent("Saved in", value: Storage.directory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                    .textSelection(.enabled)
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Storage.settingsURL]) }
+            Section {
                 Button("Reset all settings…", role: .destructive) { confirmReset.value = true }
             }
         }
@@ -124,6 +63,9 @@ struct GeneralTab: View {
             Button("Reset", role: .destructive) { model.resetAllSettings() }
         } message: {
             Text("Moods, macros and options go back to the defaults.")
+        }
+        .confirmationDialog("Restore the lighting your keyboard had before F99 Mood?", isPresented: $confirmRestore.value) {
+            Button("Restore") { model.restoreOriginal() }
         }
     }
 }
@@ -197,7 +139,7 @@ struct AccessibilityBanner: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "hand.raised").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Allow F99 Mood in Privacy & Security → Accessibility. Already on? Press Fix in General.")
+                Text("Allow F99 Mood in Privacy & Security → Accessibility. Already on? Press Fix in Settings.")
                     .font(compact ? .caption : .callout)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Allow…") {

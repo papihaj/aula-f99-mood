@@ -61,10 +61,10 @@ open "build/F99 Mood.app"
 icon is drawn by `Tools/make_icon.swift` (a minimal keyboard on black, every key
 lit from cyan to magenta with a wave of light running through it) and saved in
 `Resources/`. A keyboard icon appears in the menu bar, and the app is in the
-Dock too (turn that off under **General**).
+Dock too (turn that off in **Settings**).
 
 To keep the app, drag `F99 Mood.app` into your Applications folder. To start it
-when you log in, turn on **General → Open F99 Mood when I log in**.
+when you log in, turn on **Settings → Open at login**.
 
 **Keep permissions across rebuilds.** macOS ties permissions (Input
 Monitoring, Accessibility, audio) to the app's signature. Run this once to make
@@ -139,16 +139,14 @@ open. In the mood list they have a pink **LIVE** badge.
 | 🌡️ Typing Heatmap | Keys you use most glow hotter | QMK "Typing Heatmap" |
 | 🎮 WASD | Your own painted keys: WASD and the arrows bright on dim violet | Razer Synapse, Wooting, VIA |
 
-**Start-up mood** (★): pick one on the welcome screen, under **General**, or with
-**Start-up mood** in a mood's settings, and F99 Mood switches to it whenever it
-opens. There's none until you choose. If the keyboard is replugged, the app
+**Start-up mood** (★): pick one on the welcome screen or in **Settings**, and
+F99 Mood switches to it whenever it opens. There's none until you choose. If the keyboard is replugged, the app
 carries on with whatever mood you're using.
 
-**Keep every key lit** (off until you turn it on) keeps every key at a set
-brightness or more in live effects and music, and lifts very dark colours to a
-readable version of the same colour. See [Lights](#lights-brightness-key-presses-away).
+**Keep every key lit** (in **Settings**, off until you turn it on) keeps every
+key at least half lit in live effects and music, so you can read the letters.
 
-Any mood can use a live effect: in **Moods & Macros**, pick it from the
+Any mood can use a live effect: in the **Moods** pane, pick it from the
 **Effect** menu under "Live effects". Brightness, speed and colour work the same;
 **Colourful** uses the effect's own colours. The typing effects need
 **Accessibility** permission to see which keys you press; they use only the key's
@@ -160,11 +158,11 @@ built-in ones you never changed are replaced by this set.
 
 ⌃ is Control and ⌥ is Option.
 
-To change a mood or add one, choose **Moods & Macros… → Moods**. For each mood
+To change a mood or add one, open the **Moods** pane. For each mood
 you can set:
 
-- **Effect:** one of the keyboard's 18 built-in effects, such as Fixed on,
-  Breathing, Rainbow, Raindrops, Reaction or Sine wave.
+- **Effect:** one of the keyboard's own effects (Fixed on, Breathing, Rainbow
+  wheel, Stars twinkle, Reaction, Sine wave) or a live effect.
 - **Brightness:** 0 to 4. 0 turns the lights off.
 - **Speed:** 0 to 4.
 - **Colour:** red, green, blue, yellow, magenta, cyan, white, or "colourful"
@@ -176,7 +174,7 @@ Click **Use this mood now** to try it on the keyboard.
 
 ### Macros
 
-Choose **Moods & Macros… → Macros**. A macro does one of two things:
+Open the **Macros** pane. A macro does one of two things:
 
 - **Type text:** types a block of text, such as an email signature or a common
   reply. It can be more than one line.
@@ -221,7 +219,7 @@ moments), Neon, Fire, Ocean, Sunset, Classic or Rainbow, or **Custom** to choose
 
 By default the app listens to whatever your Mac is playing, such as Spotify,
 Apple Music, YouTube or a game. To react to music in the room instead, go to
-**Moods & Macros… → Music** and choose **Microphone**.
+the **Music** pane and choose **Microphone**.
 
 **Moods while dancing.** Click a mood while the music plays and the music keeps
 going in that mood's colours and brightness: Calm dances in shades of cyan,
@@ -236,19 +234,22 @@ the right privacy setting.
 When you click **Stop dancing** or quit the app, your previous lighting comes
 back.
 
-### Lights: brightness, key presses, away
+### Settings
 
-**Moods & Macros → Lights**:
+One page with everything else:
 
-- **Keep every key lit**, and how bright (20–80%). In live effects and music no
-  key drops below it, so you can read the letters on the F99's solid keycaps.
-- **Light up keys I press**: in Neon Cascade and the typing effects (default),
-  in every live effect, or off. Choose the colour (the theme's lightest, white,
-  or your own), the halo size (none to large) and how fast it fades.
-- **Dim after** 1–30 minutes without typing or using the mouse (live effects
-  and music); any input brings them back.
-- **Lights off while the screen is locked or asleep** (on by default). They come
-  back when you unlock.
+- **Lights:** keep every key lit, light up keys you press, the strip matching
+  your colours, dimming when you're away (off, or after 1–30 minutes) and
+  lights off while the Mac is locked.
+- **Typing sounds:** Tactile, Clicky, Soft or your own file, and the volume.
+- **General:** open at login, start-up mood, appearance (light, dark or match
+  the Mac) and the Dock icon.
+- **Keyboard:** connection status, Reconnect, and **Restore original
+  lighting**, which puts back the lighting the keyboard had the first time F99
+  Mood connected to it.
+- **Permissions**, with a **Fix** button for a switch that looks on in System
+  Settings but belongs to an older build.
+- **Reset all settings**.
 
 ### Moods that switch on by themselves
 
@@ -267,11 +268,6 @@ example Gaming for Steam, Focus for your code editor, Lights out for Zoom.
 - Shortcuts that clash with another mood, macro or the music shortcut are shown
   in red, and a new shortcut always starts on a free one.
 
-### General
-
-Launch at login, the start-up mood, the Dock icon, the welcome screen, where
-your settings are saved, and **Reset all settings**.
-
 ### Comfort and flashing
 
 Music mode never flashes the keyboard more than three times a second (the
@@ -279,16 +275,6 @@ WCAG accessibility limit), keeps brightness at 80% or less, and limits how far
 the whole board's brightness can jump from one frame to the next. White flashes
 only happen on strong hits during a drop. Turn on **Reduced flashing** for
 softer beats, no white flashes and slower changes.
-
-### The Keyboard tab
-
-**Moods & Macros… → Keyboard** shows:
-
-- whether the keyboard is connected, and which model it reported;
-- the lighting currently on the keyboard;
-- the raw settings, for troubleshooting;
-- **Restore original lighting**, which puts back the lighting the keyboard had
-  the first time F99 Mood connected to it.
 
 ### Terminal commands
 
@@ -521,15 +507,15 @@ The app is careful because it writes to the keyboard's memory:
 
 | Problem | What to do |
 |---|---|
-| "No F99 found" | Use the USB-C cable, not Bluetooth or the receiver. Try another cable, since some only carry power. Plug directly into the Mac, not a hub. Then click **Reconnect** in the Keyboard tab. |
+| "No F99 found" | Use the USB-C cable, not Bluetooth or the receiver. Try another cable, since some only carry power. Plug directly into the Mac, not a hub. Then click **Reconnect** in **Settings**. |
 | "macOS blocked access" | Turn on F99 Mood under Privacy & Security → Input Monitoring, then quit and reopen the app. |
-| "Unrecognised keyboard" | The keyboard reported a different model. The app won't change it. Send the identity shown in the Keyboard tab. |
+| "Unrecognised keyboard" | The keyboard reported a different model. The app won't change it. Send the output of `F99Mood --info`. |
 | A mood doesn't change the lighting | Run `--info` and check what the keyboard reports. The app shows an error if the change didn't stick. |
 | Music mode: keys stay dark or flicker | Click **Stop dancing**. If the lighting doesn't come back, use **Keyboard → Restore original lighting**. |
 | The keyboard stays dark after a crash, Force Quit or unplugging mid-song | Open F99 Mood with the cable in: it notices the keyboard was left in per-key mode and puts your lighting back by itself. |
 | Typing effects don't light the keys I press | Turn on F99 Mood under Privacy & Security → Accessibility. The orange banner in the app has a button for it. |
 | Music stops reacting after switching to AirPods or another output | It should follow the new device by itself within a second. If not, stop and start the music. |
-| Settings look reset | If the settings file couldn't be read, it's kept as `settings-unreadable-….json` next to the new one (**General → Show in Finder**). |
+| Settings look reset | If the settings file couldn't be read, it's kept as `settings-unreadable-….json` next to the new one (in `~/Library/Application Support/F99 Mood/`). |
 | Music mode doesn't react | Run `--listen` while music plays. If the bars don't move, check Screen & System Audio Recording permission, or switch to Microphone. |
 | Keypresses get missed or doubled in music mode | Stop music mode and report it. This is what too many updates look like. |
 | A macro doesn't type anything | Turn on F99 Mood under Privacy & Security → Accessibility. |
@@ -572,7 +558,7 @@ Sources/
   Settings.swift         moods, macros and saving them to disk
   AppModel.swift         app state, connects everything together
   Views.swift            the menu bar panel and the settings window
-  SettingsViews.swift    the Lights and General tabs, the welcome screen
+  SettingsViews.swift    the Settings pane, permissions, the welcome screen
   MainWindow.swift       the main window and the on-screen keyboard
   LiveEffects.swift      the live effects and the key-press glow
 Tools/

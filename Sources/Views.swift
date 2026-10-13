@@ -191,8 +191,7 @@ struct EditorView: View {
     enum Pane: String, CaseIterable, Identifiable {
         case home = "Home"
         case moods = "Moods", schedule = "Schedule", macros = "Macros", music = "Music"
-        case lights = "Lights", alerts = "Alerts & Now Playing", sounds = "Typing Sounds"
-        case keyboard = "Keyboard", general = "General"
+        case alerts = "Alerts", settings = "Settings"
         var id: String { rawValue }
 
         var symbol: String {
@@ -202,11 +201,8 @@ struct EditorView: View {
             case .schedule: "clock.fill"
             case .macros: "command"
             case .music: "music.note"
-            case .lights: "light.max"
             case .alerts: "bell.badge.fill"
-            case .sounds: "speaker.wave.2.fill"
-            case .keyboard: "keyboard.fill"
-            case .general: "gearshape.fill"
+            case .settings: "gearshape.fill"
             }
         }
 
@@ -217,10 +213,8 @@ struct EditorView: View {
             case .schedule: .orange
             case .macros: .indigo
             case .music: .pink
-            case .lights: .yellow
             case .alerts: .red
-            case .sounds: .green
-            case .keyboard, .general: .gray
+            case .settings: .gray
             }
         }
     }
@@ -235,10 +229,7 @@ struct EditorView: View {
                     ForEach([Pane.moods, .schedule, .macros, .music]) { row($0) }
                 }
                 Section {
-                    ForEach([Pane.lights, .alerts, .sounds]) { row($0) }
-                }
-                Section {
-                    ForEach([Pane.keyboard, .general]) { row($0) }
+                    ForEach([Pane.alerts, .settings]) { row($0) }
                 }
             }
             .listStyle(.sidebar)
@@ -251,11 +242,8 @@ struct EditorView: View {
                 case .schedule: ScheduleTab()
                 case .macros: MacrosTab().padding(12)
                 case .music: MusicTab()
-                case .lights: LightsTab()
                 case .alerts: AlertsTab()
-                case .sounds: SoundsTab()
-                case .keyboard: KeyboardTab()
-                case .general: GeneralTab()
+                case .settings: SettingsTab()
                 }
             }
             .navigationTitle(model.pane == .home ? "F99 Mood" : model.pane.rawValue)
@@ -478,11 +466,6 @@ struct MoodEditor: View {
                 AppList(apps: $mood.apps)
                 Text("On while one of these apps is in front.")
                     .font(.caption).foregroundStyle(.secondary)
-            }
-            Section {
-                Toggle("Start-up mood", isOn: Binding(
-                    get: { model.settings.startupMoodID == mood.id },
-                    set: { model.setStartupMood($0 ? mood.id : nil) }))
             }
             Section {
                 HStack {
@@ -744,53 +727,6 @@ struct MacroEditor: View {
     }
 }
 
-// MARK: Keyboard
-
-struct KeyboardTab: View {
-    @EnvironmentObject var model: AppModel
-    @StateObject private var confirmRestore = ViewState(false)
-
-    var body: some View {
-        Form {
-            Section("Connection") {
-                StatusLine()
-                if !model.identity.isEmpty {
-                    LabeledContent("Identity", value: model.identity).font(.body.monospaced())
-                }
-                Button("Reconnect") { model.connect() }.disabled(model.busy)
-            }
-            if let page = model.page, let cur = page.current {
-                Section("On the keyboard right now") {
-                    LabeledContent("Effect", value: F99.effect(cur.effect)?.name ?? "Other (\(cur.effect))")
-                    LabeledContent("Brightness", value: "\(cur.brightness)")
-                    LabeledContent("Speed", value: "\(cur.speed)")
-                    LabeledContent("Colour", value: cur.color == F99.colorful ? "Colourful"
-                                   : F99.colors.first { $0.id == cur.color }?.name ?? "\(cur.color)")
-                    Button("Read again") { model.refresh() }.disabled(model.busy)
-                    DisclosureGroup("Raw settings page") {
-                        Text(page.hexDump).font(.caption.monospaced()).textSelection(.enabled)
-                    }
-                }
-            }
-            Section("Light strip") {
-                StripNote()
-            }
-            Section("Safety") {
-                Text("Puts back the lighting from before F99 Mood.")
-                    .font(.callout).foregroundStyle(.secondary)
-                Button("Restore original lighting…") { confirmRestore.value = true }
-                    .disabled(!model.canWrite || !model.hasBackup || model.busy)
-                Text("Fn + Esc factory-resets the keyboard.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-        .confirmationDialog("Restore the lighting your keyboard had before F99 Mood?", isPresented: $confirmRestore.value) {
-            Button("Restore") { model.restoreOriginal() }
-        }
-    }
-}
-
 // MARK: Music
 
 /// The music card: a round play button like a mini player, the level and
@@ -942,18 +878,11 @@ struct MusicTab: View {
                 }
                 .pickerStyle(.radioGroup)
                 Text(model.settings.musicInput == .system
-                     ? "Works with Spotify, Apple Music, YouTube and anything else playing on this Mac. The first time, macOS asks to allow audio recording. F99 Mood only measures the sound and never saves it."
-                     : "Listens through the microphone, for music playing in the room. Nothing is saved.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Keyboard colours") {
-                Toggle("Colour correction for LEDs", isOn: Binding(get: { model.settings.ledColorCorrection },
-                                                                  set: { model.setColorCorrection($0) }))
-                Text("Matches the keyboard to the colours on screen.")
+                     ? "Anything playing on this Mac."
+                     : "Music playing in the room.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Comfort") {
-                KeepLitControls()
                 Toggle("Reduced flashing", isOn: Binding(get: { model.settings.reducedFlashing },
                                                          set: { model.setReducedFlashing($0) }))
                 Text("Softer beats and no white flashes.")
@@ -965,23 +894,6 @@ struct MusicTab: View {
             }
         }
         .formStyle(.grouped)
-    }
-}
-
-// MARK: Light strip
-
-/// The strip between Backspace and Num Lock: its colour follows moods and
-/// themes; its style is picked on the keyboard with Fn + Shift.
-struct StripNote: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Toggle("Light strip matches my mood and theme colours", isOn: Binding(
-                get: { model.settings.stripFollowsColors }, set: { model.setStripFollowsColors($0) }))
-            Text("Fn + Shift changes the strip's style.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
     }
 }
 
