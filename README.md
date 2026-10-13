@@ -15,7 +15,7 @@ This is an unofficial app. It is not made by, supported by or connected to AULA
 or EPOMAKER.
 
 > **Status:** Tested on a real F99 (original model, wired): moods, live
-> streaming, music mode and the light strip's colour work. The automated tests
+> streaming, music mode and the light strip's colours and styles work. The automated tests
 > pass. See [Testing it on your keyboard for the first time](#testing-it-on-your-keyboard-for-the-first-time).
 
 A new install starts clean: the built-in moods, no macros, no start-up mood,
@@ -205,13 +205,13 @@ Click **Dance to music** in the menu, or press **⌃⌥D**. Choose a style:
 - **Fireworks:** keys pop and fade on the beat, and the treble adds small
   sparkles.
 
-The **light strip** between Backspace and Num Lock changes to your theme's main
-colour (Electric turns it blue, Fire red, and so on), or to a mood's colour when
-you click one. It can't flash with each beat: unlike the keys, the strip has no
+The **light strip** between Backspace and Num Lock follows what's on the keys:
+its own colour-changing gradient while you dance to music or use a live effect
+with several colours, steady in a mood's colour when the mood has one, and off
+for Lights out. It can't flash with each beat: unlike the keys, the strip has no
 live colour channel, only a saved setting, and saving many times a second would
-wear out the keyboard's memory. Press **Fn + Shift** on the keyboard to change
-the strip's style (static, blinking, …); the app only changes its colour. Turn
-this off with **Light strip matches colours**.
+wear out the keyboard's memory. Turn this off with **Strip matches colours**;
+then **Fn + Shift** on the keyboard picks the strip's style yourself.
 
 Pick a **colour theme**: Electric (deep blue, violet, cyan, with magenta for big
 moments), Neon, Fire, Ocean, Sunset, Classic or Rainbow, or **Custom** to choose
@@ -525,11 +525,12 @@ The app is careful because it writes to the keyboard's memory:
 
 - **Not yet tested on an F99.** Everything comes from AULA's F99 configuration
   file and from testing on the F75. Music mode is the least certain part.
-- **The light strip only changes colour,** when you pick a mood or theme. It
-  isn't part of the live colour channel, so it can't move with the music.
-  (Found by testing: Fn + Shift changes settings byte 0x1c, the strip's style;
-  byte 0x1d is its colour. AULA's own Windows app doesn't control the strip
-  at all.)
+- **The light strip only changes when you pick a mood or start music.** It
+  isn't part of the live colour channel, so it can't move with the beat.
+  (Found by testing: settings byte 0x1c is the strip's style, which Fn + Shift
+  steps through: 0 off, 1 and 2 colour-changing gradients, 3 steady, 4
+  blinking; 5 and up show steady red. Byte 0x1d is its colour. AULA's own
+  Windows app doesn't control the strip at all.)
 - **Keyboard effects use the keyboard's colours.** The keyboard's own 18 effects
   only take its 7 colours plus "colourful". Live effects and music use any
   colour.

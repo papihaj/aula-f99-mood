@@ -262,16 +262,16 @@ final class Keyboard {
     /// Read the page, patch the lighting fields, write it back, and confirm the
     /// keyboard kept them. If it did not, the original page is written back.
     @discardableResult
-    func apply(_ lighting: ConfigPage.Lighting, stripColor: Int? = nil) throws -> ConfigPage {
+    func apply(_ lighting: ConfigPage.Lighting, strip: ConfigPage.Strip? = nil) throws -> ConfigPage {
         try write { page in
             try page.apply(lighting)
-            if let stripColor { try page.setStripColor(stripColor) }
+            if let strip { try page.setStrip(strip) }
         }
     }
 
     @discardableResult
-    func setStripColor(_ color: Int) throws -> ConfigPage {
-        try write { try $0.setStripColor(color) }
+    func setStrip(_ strip: ConfigPage.Strip) throws -> ConfigPage {
+        try write { try $0.setStrip(strip) }
     }
 
     /// Put back the lighting part (effect and per-effect table) of a page saved
@@ -283,11 +283,11 @@ final class Keyboard {
 
     /// Switch to per-key mode so colours streamed from the Mac show up.
     /// Returns the page from before, for `restoreLighting(from:)` afterwards.
-    func enterStreamMode(stripColor: Int? = nil) throws -> ConfigPage {
+    func enterStreamMode(strip: ConfigPage.Strip? = nil) throws -> ConfigPage {
         let before = try readSettings()
         _ = try write { page in
             page.setStreamMode()
-            if let stripColor { try page.setStripColor(stripColor) }
+            if let strip { try page.setStrip(strip) }
         }
         return before
     }

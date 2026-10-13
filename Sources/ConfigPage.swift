@@ -95,9 +95,10 @@ struct ConfigPage: Equatable {
         for r in Self.lightingRanges { bytes.replaceSubrange(r, with: other.bytes[r]) }
     }
 
-    /// The side light strip's settings, found on an F99 on 2026-10-12:
-    /// - 0x1c mode: pressing Fn + Shift changed only this byte (3 → 4, the
-    ///   strip went to blinking); 3 is static.
+    /// The side light strip's settings, found on an F99 on 2026-10-12 and 13:
+    /// - 0x1c mode (`StripMode`): 0 off, 1 and 2 colour-changing gradients,
+    ///   3 steady, 4 blinking. Fn + Shift steps through them; 5 and up show
+    ///   steady red, so they aren't used.
     /// - 0x1d colour, same numbering as the keys (0 red, 1 green, …): writing
     ///   1 turned the static red strip green.
     /// - 0x1e, 0x1f: probably brightness and speed; unconfirmed, never written.
@@ -106,11 +107,35 @@ struct ConfigPage: Equatable {
     static let stripColorOffset = 0x1d
 
     var stripColor: Int { Int(bytes[Self.stripColorOffset]) }
+    var stripMode: Int { Int(bytes[Self.stripModeOffset]) }
 
-    /// Set the strip's colour (0-6), leaving its mode as the user picked it.
-    mutating func setStripColor(_ color: Int) throws {
-        guard (0..<F99.colorful).contains(color) else { throw KeyboardError.invalidSetting }
-        bytes[Self.stripColorOffset] = UInt8(color)
+    enum StripMode: Int { case off = 0, gradient = 1, steady = 3, blinking = 4 }
+
+    /// How the strip should look: a mode and, for steady or blinking, a colour.
+    struct Strip: Equatable {
+        var mode: StripMode
+        var color: Int?
+        static let off = Strip(mode: .off)
+        static let gradient = Strip(mode: .gradient)
+        static func steady(_ color: Int) -> Strip { Strip(mode: .steady, color: color) }
+        static func blinking(_ color: Int) -> Strip { Strip(mode: .blinking, color: color) }
+    }
+
+    /// The strip already looks like `s` (its colour only matters when `s` has one).
+    func shows(_ s: Strip) -> Bool {
+        stripMode == s.mode.rawValue && (s.color == nil || stripColor == s.color)
+    }
+
+    var strip: Strip {
+        Strip(mode: StripMode(rawValue: stripMode) ?? .steady, color: stripColor)
+    }
+
+    mutating func setStrip(_ s: Strip) throws {
+        if let color = s.color {
+            guard (0..<F99.colorful).contains(color) else { throw KeyboardError.invalidSetting }
+            bytes[Self.stripColorOffset] = UInt8(color)
+        }
+        bytes[Self.stripModeOffset] = UInt8(s.mode.rawValue)
     }
 
     mutating func setStripByte(_ offset: Int, _ value: UInt8) throws {

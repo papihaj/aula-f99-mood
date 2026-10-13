@@ -96,7 +96,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var mailNotAllowed = false
     private var stripAlertUntil: Date?
     private var stripAlertIsMail = false
-    private var stripBeforeAlert: Int?
+    private var stripBeforeAlert: ConfigPage.Strip?
     /// A mood the editor should open (set by "New mood").
     @Published var editMoodRequest: UUID?
     /// The pane showing in the main window's sidebar.
@@ -284,7 +284,7 @@ final class AppModel: ObservableObject {
                 self?.renderer.palette = palette
                 self?.renderer.brightnessScale = scale
             }
-            setStrip(stripColor(for: mood))
+            setStrip(strip(for: mood))
             return
         }
         if musicOn { stopMusic() }
@@ -295,8 +295,8 @@ final class AppModel: ObservableObject {
             settings.activeMoodID = mood.id
             return
         }
-        let strip = stripColor(for: mood)
-        perform({ try $0.apply(lighting, stripColor: strip) }) { [weak self] in
+        let strip = strip(for: mood)
+        perform({ try $0.apply(lighting, strip: strip) }) { [weak self] in
             self?.previewLighting = lighting
             self?.settings.activeMoodID = mood.id
         }
@@ -367,23 +367,23 @@ final class AppModel: ObservableObject {
     /// About half brightness by default: readable letters, room for effects.
     private var keysLitFloor: Double { settings.keepKeysLit ? settings.keysLitLevel : 0 }
 
-    /// The strip colour for a mood: its colour, if it has one of the fixed
-    /// colours. Colourful moods leave the strip as it is.
-    private func stripColor(for mood: Mood) -> Int? {
+    /// The strip for a mood: steady in its colour if it has one fixed colour,
+    /// off for a mood with the lights off, else the strip's own gradient.
+    private func strip(for mood: Mood) -> ConfigPage.Strip? {
         // An alert is showing on the strip: leave it until it's cleared.
         guard settings.stripFollowsColors, stripAlert == nil else { return nil }
-        if let live = mood.live, !(0..<F99.colorful).contains(mood.lighting.color) {
-            return live.palette.stripColor
-        }
+        let fixed = (0..<F99.colorful).contains(mood.lighting.color)
+        if let live = mood.live, !fixed { return live.palette.strip }
+        if mood.live == nil, mood.lighting.brightness == 0 { return .off }
         let effect = F99.effect(mood.lighting.effect)
-        guard effect?.hasColor != false, (0..<F99.colorful).contains(mood.lighting.color) else { return nil }
-        return mood.lighting.color
+        guard effect?.hasColor != false, fixed else { return .gradient }
+        return .steady(mood.lighting.color)
     }
 
-    /// Set just the strip's colour (a saved setting, so only on changes).
-    private func setStrip(_ color: Int?) {
-        guard let color, canWrite, page?.stripColor != color else { return }
-        perform { try $0.setStripColor(color) }
+    /// Change just the strip (a saved setting, so only on changes).
+    private func setStrip(_ strip: ConfigPage.Strip?) {
+        guard let strip, canWrite, page?.shows(strip) != true else { return }
+        perform { try $0.setStrip(strip) }
     }
 
     /// What the on-screen keyboard should show when music is off.
@@ -439,7 +439,7 @@ final class AppModel: ObservableObject {
     private func pushPalette() {
         let palette = settings.musicPalette
         musicMood = nil
-        if musicOn, settings.stripFollowsColors { setStrip(palette.stripColor) }
+        if musicOn, settings.stripFollowsColors, stripAlert == nil { setStrip(palette.strip) }
         queue.async { [weak self] in
             self?.renderer.palette = palette
             self?.renderer.brightnessScale = 1
@@ -484,7 +484,7 @@ final class AppModel: ObservableObject {
         let reduced = settings.reducedFlashing
         let floor = keysLitFloor
         let correction = settings.ledColorCorrection
-        let strip = settings.stripFollowsColors && stripAlert == nil ? palette.stripColor : nil
+        let strip = settings.stripFollowsColors && stripAlert == nil ? palette.strip : nil
         musicMood = nil
         hearingNothing = false
         streamSession += 1
@@ -533,8 +533,8 @@ final class AppModel: ObservableObject {
 
     /// Switch the keyboard to per-key mode and remember the lighting from
     /// before, on disk too. Runs on `queue`.
-    nonisolated private func beginStream(_ kb: Keyboard, strip: Int?) throws -> ConfigPage {
-        var before = try kb.enterStreamMode(stripColor: strip)
+    nonisolated private func beginStream(_ kb: Keyboard, strip: ConfigPage.Strip?) throws -> ConfigPage {
+        var before = try kb.enterStreamMode(strip: strip)
         if before.isStreamMode {
             // Already per-key (say, a live mood resuming after a replug):
             // the lighting to go back to is the one saved earlier.
@@ -822,7 +822,7 @@ final class AppModel: ObservableObject {
             // Already streaming: just switch effect.
             liveMood = mood
             queue.async { [weak self] in if let self { configure(self.liveRenderer) } }
-            setStrip(stripColor(for: mood))
+            setStrip(strip(for: mood))
             updateKeyMonitor()
             return
         }
@@ -831,7 +831,7 @@ final class AppModel: ObservableObject {
         lastError = nil
         let toKeyboard = canWrite
         liveSessionToKeyboard = toKeyboard
-        let strip = stripColor(for: mood)
+        let strip = strip(for: mood)
         let correction = settings.ledColorCorrection
         streamSession += 1
         let session = streamSession
@@ -1335,14 +1335,12 @@ final class AppModel: ObservableObject {
     func raiseAlert(_ text: String, until: Date?, mail: Bool) {
         flash(color: settings.alertColor, times: settings.alertFlashes)
         guard settings.stripAlerts else { return }
-        if stripAlert == nil { stripBeforeAlert = page?.stripColor }
+        if stripAlert == nil { stripBeforeAlert = page?.strip }
         stripAlert = text
         stripAlertUntil = until
         stripAlertIsMail = mail
-        if canWrite, page?.stripColor != settings.stripAlertColor {
-            let color = settings.stripAlertColor
-            perform { try $0.setStripColor(color) }
-        }
+        let alert = ConfigPage.Strip.blinking(settings.stripAlertColor)
+        if canWrite, page?.shows(alert) != true { perform { try $0.setStrip(alert) } }
     }
 
     /// Put the strip back: the current mood's colour, else what it was.
@@ -1350,17 +1348,18 @@ final class AppModel: ObservableObject {
         guard stripAlert != nil else { return }
         stripAlert = nil
         stripAlertUntil = nil
-        let back = activeMood.flatMap { stripColor(for: $0) } ?? stripBeforeAlert
+        let back = musicOn ? (settings.stripFollowsColors ? settings.musicPalette.strip : nil)
+            : (liveMood ?? activeMood).flatMap { strip(for: $0) }
+        setStrip(back ?? stripBeforeAlert)
         stripBeforeAlert = nil
-        if let back, canWrite, page?.stripColor != back { perform { try $0.setStripColor(back) } }
     }
 
     /// After a stream ends the keyboard gets its old page back, strip and
     /// all; keep a waiting alert showing.
     private func keepAlertStrip() {
-        guard stripAlert != nil, canWrite, page?.stripColor != settings.stripAlertColor else { return }
-        let color = settings.stripAlertColor
-        perform { try $0.setStripColor(color) }
+        let alert = ConfigPage.Strip.blinking(settings.stripAlertColor)
+        guard stripAlert != nil, canWrite, page?.shows(alert) != true else { return }
+        perform { try $0.setStrip(alert) }
     }
 
     // MARK: New moods

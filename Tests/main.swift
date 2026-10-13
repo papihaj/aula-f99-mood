@@ -234,12 +234,16 @@ for i in 0..<30 {
 }
 check(Int(dimFrame.max()!) * 3 < Int(fullFrame.max()!), "dim mood dims the music")
 
-// Strip colour: only byte 0x1d changes, the mode is left alone, and only the
-// fixed colours are accepted.
+// Strip: mode in 0x1c, colour in 0x1d, nothing else; only the fixed
+// colours are accepted, and a gradient leaves the colour alone.
 var stripPage = page
-try! stripPage.setStripColor(5)
-check(stripPage.diff(page) == [0x1d], "strip colour touches only 0x1d")
-check((try? stripPage.setStripColor(7)) == nil && (try? stripPage.setStripColor(-1)) == nil, "strip colour range")
+try! stripPage.setStrip(.steady(5))
+check(Set(stripPage.diff(page)).isSubset(of: [0x1c, 0x1d]) && stripPage.shows(.steady(5)), "steady strip touches only 0x1c-0x1d")
+try! stripPage.setStrip(.gradient)
+check(stripPage.stripMode == 1 && stripPage.stripColor == 5 && stripPage.shows(.gradient), "gradient keeps the colour")
+check(!stripPage.shows(.steady(5)), "gradient isn't steady")
+check((try? stripPage.setStrip(.steady(7))) == nil && (try? stripPage.setStrip(.blinking(-1))) == nil, "strip colour range")
+check(MusicPalette.electric.strip == .gradient, "several colours: gradient strip")
 check((try? stripPage.setStripByte(0x20, 1)) == nil, "only strip bytes can be set")
 // Theme to strip colour: the nearest of the keyboard's colours.
 check(MusicPalette.electric.stripColor == 2, "Electric strip is blue")

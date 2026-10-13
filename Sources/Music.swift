@@ -419,6 +419,8 @@ struct MusicPalette: Codable, Hashable, Identifiable {
     /// The light strip's colour for this palette: the firmware colour nearest
     /// its main (first) colour.
     var stripColor: Int { F99.nearestColor(colors.first ?? RGB(1, 1, 1)) }
+    /// One colour: the strip in that colour. Several: the strip's own gradient.
+    var strip: ConfigPage.Strip { colors.count > 1 ? .gradient : .steady(stripColor) }
 
     /// The palette's last colour: kept back as the accent for big moments.
     var accent: RGB { colors.last ?? RGB(1, 1, 1) }
