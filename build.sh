@@ -19,12 +19,18 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp -R Resources/Sounds "$APP/Contents/Resources/Sounds"
 
 echo "Building app…"
-swiftc -swift-version 5 -O -parse-as-library \
-  -target "$(uname -m)-apple-macos14.2" \
-  Sources/*.swift \
-  -framework IOKit -framework Carbon -framework AppKit -framework SwiftUI \
-  -framework CoreAudio -framework AVFoundation -framework Accelerate -framework EventKit \
-  -o "$APP/Contents/MacOS/F99Mood"
+# ARCHS="arm64 x86_64" builds one app for both Apple silicon and Intel Macs.
+ARCH_LIST=(${=ARCHS:-$(uname -m)})
+for arch in $ARCH_LIST; do
+  swiftc -swift-version 5 -O -parse-as-library \
+    -target "$arch-apple-macos14.2" \
+    Sources/*.swift \
+    -framework IOKit -framework Carbon -framework AppKit -framework SwiftUI \
+    -framework CoreAudio -framework AVFoundation -framework Accelerate -framework EventKit \
+    -o "build/F99Mood-$arch"
+done
+lipo -create build/F99Mood-${^ARCH_LIST} -output "$APP/Contents/MacOS/F99Mood"
+rm -f build/F99Mood-${^ARCH_LIST}
 
 # macOS ties permissions (Input Monitoring, audio) to the app's signature. An
 # ad-hoc signature changes on every build, which silently breaks them, so sign
