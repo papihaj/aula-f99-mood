@@ -42,7 +42,8 @@ on your Mac (`~/Library/Application Support/F99 Mood/`), never in the app.
 
 ## What you need
 
-- A Mac running **macOS 14.2 or later**
+- A Mac running **macOS 13 Ventura or later** (14.2 or later to dance to
+  the Mac's own sound; older versions use the microphone)
 - **Apple's Command Line Tools.** Full Xcode is not needed. If you don't have
   them, run `xcode-select --install`.
 - An **AULA F99** (also sold as the EPOMAKER x AULA F99)

@@ -189,10 +189,17 @@ final class CalendarWatcher {
     private var alerted = Set<String>()
 
     static var status: EKAuthorizationStatus { EKEventStore.authorizationStatus(for: .event) }
-    static var allowed: Bool { status == .fullAccess }
+    static var allowed: Bool {
+        if #available(macOS 14, *) { return status == .fullAccess }
+        return status == .authorized
+    }
 
     func requestAccess(_ done: @escaping @Sendable (Bool) -> Void) {
-        store.requestFullAccessToEvents { ok, _ in DispatchQueue.main.async { done(ok) } }
+        if #available(macOS 14, *) {
+            store.requestFullAccessToEvents { ok, _ in DispatchQueue.main.async { done(ok) } }
+        } else {
+            store.requestAccess(to: .event) { ok, _ in DispatchQueue.main.async { done(ok) } }
+        }
     }
 
     /// Events that start within `minutesBefore` minutes (or started in the

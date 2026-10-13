@@ -244,7 +244,7 @@ struct EditorView: View {
         }
         .frame(minWidth: 920, minHeight: 680)
         .onAppear { if model.editMoodRequest != nil { model.pane = .moods } }
-        .onChange(of: model.editMoodRequest) { _, id in if id != nil { model.pane = .moods } }
+        .onChange(of: model.editMoodRequest) { id in if id != nil { model.pane = .moods } }
     }
 
     private func row(_ p: Pane) -> some View {
@@ -351,7 +351,7 @@ struct MoodsTab: View {
             if let id = model.editMoodRequest { selection.value = id; model.editMoodRequest = nil }
             selection.value = selection.value ?? model.settings.moods.first?.id
         }
-        .onChange(of: model.editMoodRequest) { _, id in
+        .onChange(of: model.editMoodRequest) { id in
             if let id { selection.value = id; model.editMoodRequest = nil }
         }
         .alert("Delete \(selected.map { "“\($0.name)”" } ?? "this mood")?", isPresented: $confirmDelete.value) {
@@ -886,12 +886,13 @@ struct MusicTab: View {
             }
             Section("Listen to") {
                 Picker("Source", selection: Binding(get: { model.settings.musicInput }, set: { model.setMusicInput($0) })) {
-                    ForEach(MusicInput.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(MusicInput.available) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.radioGroup)
                 Text(model.settings.musicInput == .system
                      ? "Anything playing on this Mac."
-                     : "Music playing in the room.")
+                     : MusicInput.systemAvailable ? "Music playing in the room."
+                     : "Music playing in the room. Hearing your Mac's own sound needs macOS 14.2 or later.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {

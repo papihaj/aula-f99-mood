@@ -10,7 +10,7 @@
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>1.0</string>
 	<key>CFBundleVersion</key><string>1</string>
-	<key>LSMinimumSystemVersion</key><string>14.2</string>
+	<key>LSMinimumSystemVersion</key><string>13.0</string>
 	<key>NSAudioCaptureUsageDescription</key><string>F99 Mood listens to the music playing on your Mac so your keyboard lights can move to it. The audio is never saved.</string>
 	<key>NSMicrophoneUsageDescription</key><string>F99 Mood listens to music in the room so your keyboard lights can move to it. The audio is never saved.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key><string>F99 Mood can flash your keyboard just before a meeting starts. It only reads when your events start; nothing is saved or sent.</string>

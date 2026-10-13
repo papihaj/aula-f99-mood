@@ -62,6 +62,8 @@ protocol AudioSource: AnyObject {
 
 /// Everything the Mac is playing, through a Core Audio process tap
 /// (macOS 14.2+). The sound still plays normally; the app only gets a copy.
+/// Needs macOS 14.2; older Macs use the microphone instead.
+@available(macOS 14.2, *)
 final class SystemAudioSource: AudioSource {
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)

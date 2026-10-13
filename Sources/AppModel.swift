@@ -558,7 +558,8 @@ final class AppModel: ObservableObject {
 
     /// Start listening; nil (with the error shown) if it couldn't.
     private func startAudioSource() -> AudioSource? {
-        let source: AudioSource = settings.musicInput == .system ? SystemAudioSource() : MicrophoneSource()
+        let source: AudioSource
+        if settings.musicInput == .system, #available(macOS 14.2, *) { source = SystemAudioSource() } else { source = MicrophoneSource() }
         do {
             try source.start(into: samples)
         } catch {

@@ -53,6 +53,16 @@ enum MusicInput: String, Codable, CaseIterable, Identifiable {
     case system = "Sound playing on this Mac"
     case microphone = "Microphone"
     var id: String { rawValue }
+
+    /// Hearing the Mac's own sound needs macOS 14.2; before that, only the
+    /// microphone.
+    static var systemAvailable: Bool {
+        if #available(macOS 14.2, *) { return true }
+        return false
+    }
+    static var available: [MusicInput] { systemAvailable ? allCases : [.microphone] }
+    /// The best source this Mac has.
+    static var preferred: MusicInput { systemAvailable ? .system : .microphone }
 }
 
 /// What the music is doing right now. Values are 0...1 unless noted.

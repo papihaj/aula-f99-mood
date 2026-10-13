@@ -23,7 +23,7 @@ echo "Building app…"
 ARCH_LIST=(${=ARCHS:-$(uname -m)})
 for arch in $ARCH_LIST; do
   swiftc -swift-version 5 -O -parse-as-library \
-    -target "$arch-apple-macos14.2" \
+    -target "$arch-apple-macos13.0" \
     Sources/*.swift \
     -framework IOKit -framework Carbon -framework AppKit -framework SwiftUI \
     -framework CoreAudio -framework AVFoundation -framework Accelerate -framework EventKit \

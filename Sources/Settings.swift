@@ -277,7 +277,7 @@ struct AppSettings: Codable {
     var macros: [Macro]
     var activeMoodID: UUID?
     var musicStyle: MusicStyle = .spectrum
-    var musicInput: MusicInput = .system
+    var musicInput: MusicInput = .preferred
     /// "Electric", "Fire", … or "Custom".
     var musicPaletteName = MusicPalette.electric.name
     var customColors = [RGB(hex: 0xff00aa), RGB(hex: 0x00e5ff), RGB(hex: 0xffffff)]
@@ -353,7 +353,8 @@ struct AppSettings: Codable {
         macros = (try? c.decodeLenientArray(Macro.self, forKey: .macros)) ?? []
         activeMoodID = try c.decodeIfPresent(UUID.self, forKey: .activeMoodID)
         musicStyle = (try? c.decodeIfPresent(MusicStyle.self, forKey: .musicStyle)) ?? .spectrum
-        musicInput = (try? c.decodeIfPresent(MusicInput.self, forKey: .musicInput)) ?? .system
+        musicInput = (try? c.decodeIfPresent(MusicInput.self, forKey: .musicInput)) ?? .preferred
+        if !MusicInput.available.contains(musicInput) { musicInput = .preferred }
         musicPaletteName = try c.decodeIfPresent(String.self, forKey: .musicPaletteName) ?? MusicPalette.electric.name
         reducedFlashing = try c.decodeIfPresent(Bool.self, forKey: .reducedFlashing) ?? false
         ledColorCorrection = try c.decodeIfPresent(Bool.self, forKey: .ledColorCorrection) ?? true

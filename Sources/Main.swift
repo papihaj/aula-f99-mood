@@ -90,6 +90,10 @@ enum CLI {
     /// text equaliser. Doesn't touch the keyboard.
     static func listen() -> Int32 {
         let samples = SampleBuffer()
+        guard #available(macOS 14.2, *) else {
+            print("error: hearing the Mac's sound needs macOS 14.2 or later")
+            return 1
+        }
         let source = SystemAudioSource()
         do { try source.start(into: samples) } catch {
             print("error: \(error.localizedDescription)")
