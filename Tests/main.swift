@@ -220,8 +220,8 @@ check(abs(last.bpm - 120) < 6, "tempo locks to 120 BPM: \(last.bpm)")
 let calmMood = AppSettings.defaults.moods.first { $0.name == "Ocean Waves" }!   // cyan sine wave
 let calmPalette = MusicPalette.forMood(calmMood)
 check(calmPalette.colors.allSatisfy { $0.r < 0.75 && $0.b > 0.3 && $0.b >= $0.r }, "Calm dances in cyan shades: \(calmPalette.colors)")
-let partyMood = AppSettings.defaults.moods.first { $0.name == "Blossom" }!  // picks its own colours
-check(MusicPalette.forMood(partyMood).colors.count == 6, "Blossom dances in rainbow")
+let partyMood = AppSettings.defaults.moods.first { $0.name == "Waterfall" }!  // picks its own colours
+check(MusicPalette.forMood(partyMood).colors.count == 6, "Waterfall dances in rainbow")
 
 // A dim mood dims the music.
 let dim = MusicRenderer(), full = MusicRenderer()
@@ -267,7 +267,7 @@ var old = AppSettings(moods: [
 old.upgradeMoods()
 let names = old.moods.map(\.name)
 check(!names.contains("Calm") && names.contains("Cozy") && names.contains("Mine"), "upgrade keeps your moods: \(names)")
-check(names.contains("Rainy Day") && names.firstIndex(of: "Rainy Day")! < names.firstIndex(of: "Lights out")!,
+check(names.contains("Scanner") && names.firstIndex(of: "Scanner")! < names.firstIndex(of: "Lights out")!,
       "upgrade adds new keyboard moods before Lights out")
 check(names.contains("Matrix") && names.contains("Typing Ripples"), "upgrade adds live moods")
 let upgradedKeys = old.moods.compactMap(\.hotkey)
@@ -304,9 +304,10 @@ for effect in LiveEffect.allCases {
     }
     check(frames.allSatisfy { $0.count == 378 }, "\(effect) frame size")
     check(frames.allSatisfy { $0.max()! <= 205 }, "\(effect) brightness cap")
-    check(Set(frames.map { $0 }).count > 10, "\(effect) moves")
+    // Painted keys hold still and start with nothing painted.
+    if effect != .painted { check(Set(frames.map { $0 }).count > 10, "\(effect) moves") }
     check(biggest <= 0.121, "\(effect) no big board swings: \(biggest)")
-    check(frames.last!.contains { $0 > 20 }, "\(effect) visible")
+    if effect != .painted { check(frames.last!.contains { $0 > 20 }, "\(effect) visible") }
 }
 
 // Heartbeat stays at or under three pulses a second even at top speed.
@@ -428,5 +429,96 @@ _ = noHalo.render(now: gAt); _ = noHalo.render(now: gAt.addingTimeInterval(0.05)
 let hBase = noHalo.render(now: gAt.addingTimeInterval(0.1))
 check(abs(Int(gNext[hLED * 3]) - Int(hBase[hLED * 3])) < 3, "halo size 0: neighbours untouched")
 check(KeyMap.led(forKeyCode: 56) == F99.keys.first { $0.name == "LShift" }!.led, "modifiers light up too")
+
+// Schedule: an entry is due only at its minute and on its days; "current"
+// is the latest one that has started, carrying over from earlier days.
+var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int) -> Date {
+    cal.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))!
+}
+let moodA = UUID(), moodB = UUID()
+let morning = ScheduleEntry(hour: 7, minute: 30, days: Set(2...6), moodID: moodA) // weekdays
+let night = ScheduleEntry(hour: 22, minute: 0, moodID: moodB)
+let plan = [morning, night]
+// 2026-10-13 is a Tuesday.
+check(Schedule.due(plan, at: at(2026, 10, 13, 7, 30), calendar: cal)?.moodID == moodA, "due at its minute")
+check(Schedule.due(plan, at: at(2026, 10, 13, 7, 31), calendar: cal) == nil, "not due a minute later")
+check(Schedule.due(plan, at: at(2026, 10, 18, 7, 30), calendar: cal) == nil, "weekday entry skips Sunday")
+check(Schedule.current(plan, at: at(2026, 10, 13, 12, 0), calendar: cal)?.moodID == moodA, "current: morning until night")
+check(Schedule.current(plan, at: at(2026, 10, 13, 23, 0), calendar: cal)?.moodID == moodB, "current: night after 22:00")
+check(Schedule.current(plan, at: at(2026, 10, 13, 6, 0), calendar: cal)?.moodID == moodB, "current: carries over from last night")
+var off = night; off.enabled = false
+check(Schedule.current([off], at: at(2026, 10, 13, 23, 0), calendar: cal) == nil, "switched-off entry ignored")
+check(ScheduleEntry(hour: 9, minute: 0, days: Set(2...6), moodID: nil).daysText == "Weekdays", "days text")
+
+// New settings: an old file gets the defaults, and they fullTurn-trip.
+let plain = try! JSONDecoder().decode(AppSettings.self, from: #"{"moods":[]}"#.data(using: .utf8)!)
+check(plain.schedule.isEmpty && !plain.calendarAlerts && !plain.nowPlayingBar && !plain.keySounds, "extras off by default")
+var extras = AppSettings.defaults
+extras.schedule = plan; extras.keySounds = true; extras.keySound = .typewriter; extras.alertFlashes = 4
+let extrasBack = try! JSONDecoder().decode(AppSettings.self, from: Storage.encode(extras))
+check(extrasBack.schedule == plan && extrasBack.keySound == .typewriter && extrasBack.alertFlashes == 4, "extras fullTurn-trip")
+let wild = try! JSONDecoder().decode(AppSettings.self, from: #"{"moods":[],"alertFlashes":99,"keySound":"Kazoo","keySoundVolume":7}"#.data(using: .utf8)!)
+check(wild.alertFlashes == 6 && wild.keySound == .thock && wild.keySoundVolume == 1, "odd values clamped or defaulted")
+
+// Painted moods: the built-in WASD paints W and keeps its colours through
+// a save; the renderer shows painted keys and the base colour.
+let wasd = AppSettings.defaults.moods.first { $0.name == "WASD" }!
+let wLED = F99.keys.first { $0.name == "W" }!.led
+check(wasd.live == .painted && wasd.paintByLED[wLED] != nil, "WASD is painted")
+let wasdBack = try! JSONDecoder().decode(Mood.self, from: Storage.encode(wasd))
+check(wasdBack.paint == wasd.paint && wasdBack.paintBase == wasd.paintBase, "paint fullTurn-trips")
+let painter = LiveRenderer()
+painter.effect = .painted; painter.paint = [wLED: RGB(0, 0, 1)]; painter.paintBase = nil
+let pFrame = painter.render()
+let qKey = F99.keys.first { $0.name == "Q" }!.led
+check(pFrame[wLED * 3 + 2] > 150 && pFrame[wLED * 3] < 10, "painted key is blue")
+check(pFrame[qKey * 3] == 0 && pFrame[qKey * 3 + 2] == 0, "unpainted key is off")
+check(AppSettings.moodsVersion == 7, "moods version bumped")
+var oldUser = AppSettings.defaults
+oldUser.moods.removeAll { $0.name == "WASD" }; oldUser.moodsVersion = 5
+oldUser.upgradeMoods()
+check(oldUser.moods.contains { $0.name == "WASD" }, "upgrade adds WASD")
+
+// Overlays: the progress bar fills the column from the bottom; a flash
+// covers the board and then clears itself.
+var bar = Overlays(); bar.progress = 0.5; bar.progressColor = RGB(1, 1, 1)
+let blank = [UInt8](repeating: 0, count: Keyboard.streamSlots * 3)
+let barFrame = bar.apply(blank)
+let col = Overlays.column
+check(col.count == 6, "six keys in the column")
+check(barFrame[col[0] * 3] > 150 && barFrame[col[2] * 3] > 150, "bottom half lit at 50%")
+check(barFrame[col[5] * 3] < 40 && barFrame[col[5] * 3] > 0, "top key is a faint track")
+var fl = Overlays()
+let fStart = Date()
+fl.flash = .init(start: fStart, color: RGB(1, 0.7, 0), count: 2)
+let flashMid = fl.apply(blank, now: fStart.addingTimeInterval(Overlays.Flash.period / 2))
+check(flashMid[0] > 150, "flash lights the board")
+_ = fl.apply(blank, now: fStart.addingTimeInterval(5))
+check(fl.flash == nil, "flash ends by itself")
+
+// Hue rotation keeps a colour's lightness and comes extrasBack after a full turn.
+let teal = RGB(hex: 0x00b3a4)
+let fullTurn = teal.hueRotated(1)
+check(abs(fullTurn.r - teal.r) < 0.01 && abs(fullTurn.g - teal.g) < 0.01 && abs(fullTurn.b - teal.b) < 0.01, "full turn is the same")
+check(abs(teal.hueRotated(0.5).oklab.0 - teal.oklab.0) < 0.02, "same lightness")
+
+// Look-alike built-in moods are retired on upgrade, unless they're the
+// start-up mood or you changed their effect; Electric Ripples arrives.
+var v6 = AppSettings.defaults
+v6.moodsVersion = 6
+var galaxy = AppSettings.mood("Galaxy", "", 1, 3, 1, 7); galaxy.live = .galaxy
+var myBlossom = AppSettings.mood("Blossom", "", 2, 3, 1, 4) // effect changed: yours now
+var startCandle = AppSettings.mood("Candlelight", "", 1, 3, 1, 7); startCandle.live = .candle
+v6.moods += [galaxy, myBlossom, startCandle]
+v6.moods.removeAll { $0.name == "Electric Ripples" }
+v6.startupMoodID = startCandle.id
+v6.macros = [Macro(name: "m", hotkey: nil, action: .typeText, value: "x", moodID: galaxy.id)]
+v6.upgradeMoods()
+let v6names = v6.moods.map(\.name)
+check(!v6names.contains("Galaxy") && v6.macros[0].moodID == nil, "Galaxy retired, references cleared")
+check(v6names.contains("Blossom") && v6names.contains("Candlelight"), "edited and start-up moods kept")
+check(v6.moods.first { $0.name == "Electric Ripples" }?.paletteName == "Electric", "Electric Ripples added in Electric")
+check(!AppSettings.defaults.moods.contains { m in AppSettings.retiredMoods.contains { $0.name == m.name } }, "new users don't get retired moods")
 
 if failures == 0 { print("All tests passed.") } else { print("\(failures) test(s) failed."); exit(1) }

@@ -6,31 +6,49 @@ struct MainView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                StatusLine()
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                StatusPill()
+                if model.darkened || model.idleDimmed {
+                    Label(model.darkened ? "Lights off while locked" : "Dimmed while you're away",
+                          systemImage: "moon.zzz.fill").font(.caption).foregroundStyle(.secondary)
+                }
+                if let alert = model.stripAlert {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bell.fill").foregroundStyle(.pink)
+                        Text(alert).lineLimit(1)
+                        Button { model.clearAlert() } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Clear the alert")
+                    }
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(Capsule().fill(Color.pink.opacity(0.12)))
+                }
                 Spacer()
                 Button {
                     openWindow(id: "editor")
                 } label: {
-                    Label("Edit moods & macros", systemImage: "slider.horizontal.3")
+                    Label("Settings", systemImage: "slider.horizontal.3")
+                }
+                .help("Moods, schedule, macros, music, lights and more")
+            }
+
+            Card(padding: 12) {
+                // Always the same size, whatever is below it.
+                KeyboardPicture()
+                    .frame(width: 600, height: 600 * F99.boardSize.h / F99.boardSize.w)
+                    .padding(12)
+                    .frame(maxWidth: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .underPageBackgroundColor)))
+                Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                if let mood = model.activeMood, !model.musicOn {
+                    Divider()
+                    RemixBar(mood: mood)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                KeyboardPicture()
-                    .aspectRatio(F99.boardSize.w / F99.boardSize.h * 0.97, contentMode: .fit)
-                    .padding(14)
-                    .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.black.opacity(0.1)))
-                Text(caption).font(.callout).foregroundStyle(.secondary)
-            }
-
+            if case .unavailable = model.status { WirelessNote() }
             if model.needsAccessibility { AccessibilityBanner(compact: false) }
-            if model.darkened || model.idleDimmed {
-                Label(model.darkened ? "Lights off while the screen is locked." : "Dimmed while you're away; touch a key to bring them back.",
-                      systemImage: "moon.zzz").font(.callout).foregroundStyle(.secondary)
-            }
             if let error = model.lastError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
@@ -38,40 +56,36 @@ struct MainView: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    moodSection("Keyboard effects", "Built into the keyboard; they keep running after you quit.",
+                VStack(alignment: .leading, spacing: 16) {
+                    moodSection("Keyboard effects", "Run on the keyboard itself, even after you quit",
                                 model.settings.moods.filter { $0.live == nil && !$0.hidden })
-                    moodSection("Live effects", "Drawn by your Mac in the style of Razer, Corsair, ASUS and QMK; they run while F99 Mood is open.",
-                                model.settings.moods.filter { $0.live != nil && !$0.hidden })
+                    moodSection("Live effects", "Drawn by your Mac while F99 Mood is open",
+                                model.settings.moods.filter { $0.live != nil && !$0.hidden }, info: Self.liveInfo)
                 }
+                .padding(.vertical, 2)
             }
             .frame(minHeight: 140)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Music").font(.headline)
-                    if model.musicOn { MusicMeterView(meter: model.meter) }
-                }
-                if model.musicOn && model.hearingNothing {
-                    NotHearingBanner()
-                }
-
+            Card(padding: 12) {
+                if model.musicOn && model.hearingNothing { NotHearingBanner() }
                 MusicControls()
-                HStack(spacing: 18) {
+                HStack(spacing: 16) {
                     Toggle("Reduced flashing", isOn: Binding(get: { model.settings.reducedFlashing },
                                                              set: { model.setReducedFlashing($0) }))
-                    Toggle("Light strip matches colours", isOn: Binding(get: { model.settings.stripFollowsColors },
-                                                                         set: { model.setStripFollowsColors($0) }))
+                    Toggle("Strip matches colours", isOn: Binding(get: { model.settings.stripFollowsColors },
+                                                                   set: { model.setStripFollowsColors($0) }))
                     Toggle("Keep every key lit", isOn: Binding(get: { model.settings.keepKeysLit },
                                                                set: { model.setKeepKeysLit($0) }))
                         .help("In live effects and music, no key drops below a set brightness, so you can always read the letters.")
                 }
                 .toggleStyle(.checkbox)
-                .font(.callout)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
-        .padding(22)
-        .frame(minWidth: 640, minHeight: 580)
+        .padding(20)
+        .frame(minWidth: 700, minHeight: 680)
+        .background(Color(nsColor: .windowBackgroundColor))
         .sheet(isPresented: Binding(get: { !model.settings.welcomeDone },
                                     set: { if !$0 { model.settings.welcomeDone = true } })) {
             WelcomeView().environmentObject(model)
@@ -79,32 +93,40 @@ struct MainView: View {
     }
 
     @ViewBuilder
-    private func moodSection(_ title: String, _ note: String, _ moods: [Mood]) -> some View {
+    private func moodSection(_ title: String, _ note: String, _ moods: [Mood], info: String? = nil) -> some View {
         if !moods.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(title).font(.headline)
-                    Text(note).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 4) {
+                    GroupHeader(title: title, note: note)
+                    if let info { InfoButton(text: info) }
                 }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: 10)], spacing: 10) {
                     ForEach(moods) { MoodButton(mood: $0) }
+                    NewMoodTile(live: moods.first?.live != nil)
                 }
             }
         }
     }
 
+    static let liveInfo = """
+    The F99 can only store and play its own 18 built-in effects, the ones Fn + \\ cycles through. \
+    Live effects are new animations the keyboard doesn't have: your Mac works out every key's colour \
+    about 20 times a second and sends it over the USB-C cable. So they need F99 Mood running and the \
+    cable plugged in. When you quit or unplug, the keyboard goes back to the lighting it had before.
+    """
+
     private var caption: String {
-        let where_ = model.canWrite ? "on your keyboard" : "preview — plug in the F99 by USB-C to light it up"
+        let where_ = model.canWrite ? "on your keyboard" : "preview only: plug in the F99 by USB-C to light it up"
         if model.musicOn {
-            let colours = model.musicMood.map { "\($0.emoji) \($0.name) colours" } ?? model.settings.musicPalette.name
-            return "Dancing to music: \(model.settings.musicStyle.rawValue), \(colours) (\(where_))"
+            let colours = model.musicMood.map { "\($0.name) colours" } ?? model.settings.musicPalette.name
+            return "Dancing to music · \(model.settings.musicStyle.rawValue), \(colours) · \(where_)"
         }
         if let mood = model.liveMood, let live = mood.live {
-            return "\(mood.emoji) \(mood.name): live \(live.rawValue) (\(where_))"
+            return "\(mood.name) · live \(live.rawValue) · \(where_)"
         }
         if let l = model.shownLighting, let effect = F99.effect(l.effect) {
-            let mood = model.activeMood.map { "\($0.emoji) \($0.name): " } ?? ""
-            return "\(mood)\(effect.name), brightness \(l.brightness)/4 (\(where_))"
+            let mood = model.activeMood.map { "\($0.name) · " } ?? ""
+            return "\(mood)\(effect.name), brightness \(l.brightness)/4 · \(where_)"
         }
         return "Pick a mood or start the music"
     }
@@ -119,42 +141,28 @@ struct KeyboardPicture: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+        // The colours change every frame; the key labels and outlines don't,
+        // so they're a separate layer drawn only when the size changes.
+        ZStack {
+            TimelineView(.animation(minimumInterval: 1 / 20)) { context in
+                Canvas { gc, size in
+                    let scale = min(size.width / F99.boardSize.w, size.height / F99.boardSize.h)
+                    let t = context.date.timeIntervalSinceReferenceDate
+                    drawStrip(gc, scale)
+                    for key in F99.keys {
+                        let shape = RoundedRectangle(cornerRadius: 4 * scale).path(in: F99.keyRect(key, scale))
+                        // Keycap, then the light shining through it.
+                        gc.fill(shape, with: .color(Color(white: 0.98)))
+                        gc.fill(shape, with: .color(color(for: key, time: t).opacity(0.85)))
+                    }
+                }
+            }
             Canvas { gc, size in
                 let scale = min(size.width / F99.boardSize.w, size.height / F99.boardSize.h)
-                let t = context.date.timeIntervalSinceReferenceDate
-
-                // The light strip, in the gap right of Backspace and left of
-                // Num Lock, above the Up arrow.
-                if let back = F99.keys.first(where: { $0.name == "Backspace" }),
-                   let numLock = F99.keys.first(where: { $0.name == "NumLock" }),
-                   let up = F99.keys.first(where: { $0.name == "Up" }) {
-                    let left = back.frame.x + back.frame.w, right = numLock.frame.x
-                    let width = max(4, (right - left) * 0.35)
-                    let x = (left + right) / 2 - width / 2
-                    let top = 4.0 // level with the top row of keys
-                    let bottom = up.frame.y - 4
-                    // Its saved colour (the keyboard animates its own style).
-                    let rect = CGRect(x: x * scale, y: top * scale, width: width * scale, height: (bottom - top) * scale)
-                    let shape = Capsule().path(in: rect)
-                    gc.fill(shape, with: .color(Color(white: 0.85)))
-                    if let c = stripColor {
-                        gc.fill(shape, with: .color(Color(red: c.rgb.0, green: c.rgb.1, blue: c.rgb.2).opacity(0.85)))
-                    }
-                    gc.stroke(shape, with: .color(.black.opacity(0.2)), lineWidth: 0.8)
-                }
                 for key in F99.keys {
-                    let f = key.frame
-                    let rect = CGRect(x: f.x * scale, y: f.y * scale, width: f.w * scale, height: f.h * scale)
-                        .insetBy(dx: 1.2, dy: 1.2)
-                    let glow = color(for: key, time: t)
-                    let shape = RoundedRectangle(cornerRadius: 4 * scale).path(in: rect)
-
-                    // Keycap, then the light shining through it.
-                    gc.fill(shape, with: .color(Color(white: 0.98)))
-                    gc.fill(shape, with: .color(glow.opacity(0.85)))
-                    gc.stroke(shape, with: .color(.black.opacity(0.18)), lineWidth: 0.8)
-
+                    let rect = F99.keyRect(key, scale)
+                    gc.stroke(RoundedRectangle(cornerRadius: 4 * scale).path(in: rect),
+                              with: .color(.black.opacity(0.18)), lineWidth: 0.8)
                     let label = Self.label(key.name)
                     if !label.isEmpty {
                         let font = Font.system(size: max(6, min(11, rect.height * 0.32)), weight: .medium)
@@ -164,7 +172,31 @@ struct KeyboardPicture: View {
                     }
                 }
             }
+            .allowsHitTesting(false)
         }
+        .accessibilityElement()
+        .accessibilityLabel("Picture of your keyboard's lighting")
+    }
+
+    /// The light strip, in the gap right of Backspace and left of Num Lock,
+    /// above the Up arrow, in its saved colour (the keyboard animates its
+    /// own style).
+    private func drawStrip(_ gc: GraphicsContext, _ scale: Double) {
+        guard let back = F99.keys.first(where: { $0.name == "Backspace" }),
+              let numLock = F99.keys.first(where: { $0.name == "NumLock" }),
+              let up = F99.keys.first(where: { $0.name == "Up" }) else { return }
+        let left = back.frame.x + back.frame.w, right = numLock.frame.x
+        let width = max(4, (right - left) * 0.35)
+        let x = (left + right) / 2 - width / 2
+        let top = 4.0 // level with the top row of keys
+        let bottom = up.frame.y - 4
+        let rect = CGRect(x: x * scale, y: top * scale, width: width * scale, height: (bottom - top) * scale)
+        let shape = Capsule().path(in: rect)
+        gc.fill(shape, with: .color(Color(white: 0.85)))
+        if let c = stripColor {
+            gc.fill(shape, with: .color(Color(red: c.rgb.0, green: c.rgb.1, blue: c.rgb.2).opacity(0.85)))
+        }
+        gc.stroke(shape, with: .color(.black.opacity(0.2)), lineWidth: 0.8)
     }
 
     /// The strip's colour as the app expects it: what the keyboard reports,
@@ -378,5 +410,78 @@ struct MusicMeterView: View {
             .accessibilityLabel("Music level")
         Text(meter.bpm > 0 ? "\(Int(meter.bpm)) BPM" : "listening…")
             .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+    }
+}
+
+/// The last tile in a group: make a new mood and open it in the editor.
+struct NewMoodTile: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
+    let live: Bool
+
+    var body: some View {
+        Menu {
+            Button("Keyboard effect") { make(.keyboard) }
+            Button("Live effect") { make(.live) }
+            Button("Painted keys") { make(.painted) }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "plus").font(.system(size: 16, weight: .semibold))
+                Text("New mood").font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .frame(height: 68)
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])))
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        } primaryAction: {
+            make(live ? .live : .keyboard)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .help("Click for a new \(live ? "live" : "keyboard-effect") mood; hold for other kinds")
+        .accessibilityLabel("New mood")
+    }
+
+    private func make(_ kind: AppModel.NewMoodKind) {
+        model.createMood(kind)
+        openWindow(id: "editor")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+/// Shown while no keyboard is connected by cable.
+struct WirelessNote: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "cable.connector").foregroundStyle(.secondary).font(.title3)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Changing the lights needs the USB-C cable").font(.callout.weight(.semibold))
+                Text("The F99 only takes lighting changes over the cable, not Bluetooth or the 2.4 GHz receiver. You can type wirelessly any time: keyboard-effect moods are saved on the keyboard and keep running, and typing sounds, macros and the schedule still work here.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.05)))
+    }
+}
+
+/// An (i) button that shows a short explanation.
+struct InfoButton: View {
+    let text: String
+    @StateObject private var open = ViewState(false)
+
+    var body: some View {
+        Button { open.value.toggle() } label: { Image(systemName: "info.circle") }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Why?")
+            .popover(isPresented: $open.value) {
+                Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 300).padding(14)
+            }
     }
 }

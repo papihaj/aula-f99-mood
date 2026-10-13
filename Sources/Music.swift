@@ -351,6 +351,14 @@ struct RGB: Codable, Hashable {
 
     /// Weighted brightness, 0...1, as the eye sees it.
     var luminance: Double { 0.2126 * r + 0.7152 * g + 0.0722 * b }
+
+    /// The same lightness and strength, turned round the colour wheel by
+    /// `turn` (0...1 is a full circle).
+    func hueRotated(_ turn: Double) -> RGB {
+        let (l, a, b) = oklab
+        let angle = turn * 2 * .pi
+        return RGB(oklab: (l, a * cos(angle) - b * sin(angle), a * sin(angle) + b * cos(angle)))
+    }
 }
 
 /// The colours music mode paints with.

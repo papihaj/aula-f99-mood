@@ -85,7 +85,11 @@ final class Keyboard {
         for device in candidates {
             let status = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
             if status == kIOReturnNotPermitted {
-                IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+                // Ask only if macOS has never asked; once it has, asking
+                // again would just nag (the app shows where to allow it).
+                if IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeUnknown {
+                    IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+                }
                 lastError = KeyboardError.permissionDenied
                 continue
             }

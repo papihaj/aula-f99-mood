@@ -19,18 +19,34 @@ struct MenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            StatusLine()
+            HStack {
+                StatusPill()
+                Spacer()
+                Button {
+                    openWindow(id: "main")
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: { Image(systemName: "macwindow") }
+                .buttonStyle(.borderless).help("Open F99 Mood")
+            }
+
+            KeyboardPicture()
+                .frame(width: 278, height: 278 * F99.boardSize.h / F99.boardSize.w)
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .underPageBackgroundColor)))
 
             ScrollView {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                     ForEach(model.settings.moods.filter { !$0.hidden }) { mood in
-                        MoodButton(mood: mood)
+                        MoodButton(mood: mood, compact: true)
                     }
                 }
             }
-            .frame(maxHeight: 340)
+            .frame(maxHeight: 250)
 
-            MusicControls()
+            if let mood = model.activeMood, !model.musicOn { RemixBar(mood: mood, compact: true) }
+
+            MusicControls(compact: true)
 
             if model.needsAccessibility { AccessibilityBanner(compact: true) }
             if let error = model.lastError {
@@ -46,9 +62,10 @@ struct MenuView: View {
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
             }
+            .buttonStyle(.borderless)
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: 330)
     }
 }
 
@@ -80,7 +97,7 @@ struct StatusLine: View {
         switch model.status {
         case .searching: return nil
         case .connected:
-            if let mood = model.activeMood { return "Mood: \(mood.emoji) \(mood.name)" }
+            if let mood = model.activeMood { return "Mood: \(mood.name)" }
             return "Pick a mood"
         case .readOnly(let why), .unavailable(let why): return why
         }
@@ -95,51 +112,164 @@ struct StatusLine: View {
     }
 }
 
+/// A mood as a tile filled with its own colours, like a scene in Philips
+/// Hue or Apple Home.
 struct MoodButton: View {
     @EnvironmentObject var model: AppModel
     let mood: Mood
+    var compact = false
 
     var body: some View {
         let active = model.settings.activeMoodID == mood.id
+        let startup = model.settings.startupMoodID == mood.id
         Button { model.apply(mood) } label: {
-            VStack(spacing: 2) {
-                Text(mood.emoji).font(.title2)
-                Text((model.settings.startupMoodID == mood.id ? "★ " : "") + mood.name).font(.callout).lineLimit(1)
-                if mood.live != nil {
-                    Text("LIVE").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Color(red: 0.75, green: 0.05, blue: 0.4), in: Capsule())
+            ZStack(alignment: .bottomLeading) {
+                LinearGradient(colors: mood.swatch(custom: model.settings.customColors),
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                // Keeps white text readable on light colours.
+                LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        Image(systemName: mood.symbolName)
+                            .font(.system(size: compact ? 13 : 15, weight: .semibold))
+                        Spacer(minLength: 4)
+                        if active {
+                            Image(systemName: "checkmark.circle.fill").font(.system(size: 14))
+                                .symbolRenderingMode(.palette).foregroundStyle(Color.accentColor, .white)
+                        } else if let key = mood.hotkey, !compact {
+                            KeycapBadge(hotkey: key, onColor: true)
+                        }
+                    }
+                    Spacer(minLength: 2)
+                    HStack(spacing: 4) {
+                        Text(mood.name).font(.system(size: compact ? 11.5 : 12.5, weight: .semibold)).lineLimit(1)
+                        if startup { Image(systemName: "power").font(.system(size: 9, weight: .bold)).help("Start-up mood") }
+                        Spacer(minLength: 0)
+                        if mood.live != nil {
+                            Text("LIVE").font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                                .padding(.horizontal, 4).padding(.vertical, 1.5)
+                                .background(Capsule().fill(.black.opacity(0.3)))
+                        }
+                    }
                 }
-                if let key = mood.hotkey {
-                    Text(key.display).font(.caption2).foregroundStyle(.secondary)
-                }
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.3), radius: 1)
+                .padding(compact ? 7 : 9)
             }
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .background(active ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.1),
-                        in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(active ? Color.accentColor : .clear, lineWidth: 1.5))
+            .frame(maxWidth: .infinity)
+            .frame(height: compact ? 52 : 68)
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(active ? Color.accentColor : Color.black.opacity(0.08), lineWidth: active ? 2.5 : 0.5))
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TileButtonStyle())
         .disabled(model.busy)
-        .accessibilityLabel("\(mood.name)\(mood.live != nil ? ", live effect" : "")\(model.settings.startupMoodID == mood.id ? ", start-up mood" : "")")
+        .help(mood.hotkey.map { "\(mood.name) (\($0.display))" } ?? mood.name)
+        .accessibilityLabel("\(mood.name)\(mood.live != nil ? ", live effect" : "")\(startup ? ", start-up mood" : "")")
         .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+/// Tiles sink a little when pressed.
+struct TileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .brightness(configuration.isPressed ? -0.05 : 0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
 // MARK: Editor window
 
+/// The settings window, laid out like System Settings: a sidebar of panes
+/// with coloured icons.
 struct EditorView: View {
-    var body: some View {
-        TabView {
-            MoodsTab().tabItem { Label("Moods", systemImage: "paintpalette") }
-            MacrosTab().tabItem { Label("Macros", systemImage: "command") }
-            MusicTab().tabItem { Label("Music", systemImage: "music.note") }
-            LightsTab().tabItem { Label("Lights", systemImage: "light.max") }
-            KeyboardTab().tabItem { Label("Keyboard", systemImage: "keyboard") }
-            GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
+    @EnvironmentObject var model: AppModel
+    @StateObject private var pane = ViewState(Pane.moods)
+
+    enum Pane: String, CaseIterable, Identifiable {
+        case moods = "Moods", schedule = "Schedule", macros = "Macros", music = "Music"
+        case lights = "Lights", alerts = "Alerts & Now Playing", sounds = "Typing Sounds"
+        case keyboard = "Keyboard", general = "General"
+        var id: String { rawValue }
+
+        var symbol: String {
+            switch self {
+            case .moods: "paintpalette.fill"
+            case .schedule: "clock.fill"
+            case .macros: "command"
+            case .music: "music.note"
+            case .lights: "light.max"
+            case .alerts: "bell.badge.fill"
+            case .sounds: "speaker.wave.2.fill"
+            case .keyboard: "keyboard.fill"
+            case .general: "gearshape.fill"
+            }
         }
-        .padding()
-        .frame(minWidth: 720, minHeight: 460)
+
+        var tint: Color {
+            switch self {
+            case .moods: .purple
+            case .schedule: .orange
+            case .macros: .indigo
+            case .music: .pink
+            case .lights: .yellow
+            case .alerts: .red
+            case .sounds: .green
+            case .keyboard, .general: .gray
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            List(selection: Binding(get: { pane.value }, set: { if let p = $0 { pane.value = p } })) {
+                Section {
+                    ForEach([Pane.moods, .schedule, .macros, .music]) { row($0) }
+                }
+                Section {
+                    ForEach([Pane.lights, .alerts, .sounds]) { row($0) }
+                }
+                Section {
+                    ForEach([Pane.keyboard, .general]) { row($0) }
+                }
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
+        } detail: {
+            Group {
+                switch pane.value {
+                case .moods: MoodsTab().padding(12)
+                case .schedule: ScheduleTab()
+                case .macros: MacrosTab().padding(12)
+                case .music: MusicTab()
+                case .lights: LightsTab()
+                case .alerts: AlertsTab()
+                case .sounds: SoundsTab()
+                case .keyboard: KeyboardTab()
+                case .general: GeneralTab()
+                }
+            }
+            .navigationTitle(pane.value.rawValue)
+        }
+        .frame(minWidth: 860, minHeight: 540)
+        .onAppear { if model.editMoodRequest != nil { pane.value = .moods } }
+        .onChange(of: model.editMoodRequest) { _, id in if id != nil { pane.value = .moods } }
+    }
+
+    private func row(_ p: Pane) -> some View {
+        Label {
+            Text(p.rawValue)
+        } icon: {
+            Image(systemName: p.symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(p.tint.gradient))
+        }
+        .tag(p)
     }
 }
 
@@ -156,8 +286,10 @@ struct MoodsTab: View {
             VStack(spacing: 0) {
                 List(selection: $selection.value) {
                     ForEach(model.settings.moods) { mood in
-                        HStack {
-                            Text("\(mood.emoji)  \(mood.name)")
+                        HStack(spacing: 8) {
+                            MoodSwatch(colors: mood.swatch(custom: model.settings.customColors), symbol: mood.symbolName, corner: 5)
+                                .frame(width: 22, height: 22)
+                            Text(mood.name).lineLimit(1)
                             Spacer()
                             if mood.hidden {
                                 Image(systemName: "eye.slash").foregroundStyle(.secondary).accessibilityLabel("hidden")
@@ -168,12 +300,19 @@ struct MoodsTab: View {
                 }
                 HStack(spacing: 0) {
                     ListButtons(add: {
-                        let mood = Mood(name: "New mood", emoji: "✨",
+                        let mood = Mood(name: "New mood", emoji: "",
                                         lighting: .init(effect: 1, brightness: 3, speed: 2, color: 6), hotkey: nil)
                         model.settings.moods.append(mood)
                         selection.value = mood.id
                     }, remove: { confirmDelete.value = true }, canRemove: selection.value != nil)
                     Menu {
+                        Button("New painted mood") {
+                            var mood = Mood(name: "My painting", emoji: "", lighting: .init(effect: 1, brightness: 4, speed: 0, color: 7),
+                                            hotkey: nil, live: .painted)
+                            mood.paintBase = RGB(hex: 0x1a0640)
+                            model.settings.moods.append(mood)
+                            selection.value = mood.id
+                        }
                         Button("Duplicate") {
                             if let id = selection.value, let copy = model.duplicateMood(id) { selection.value = copy.id }
                         }.disabled(selection.value == nil)
@@ -206,7 +345,13 @@ struct MoodsTab: View {
             }
             .frame(minWidth: 420)
         }
-        .onAppear { selection.value = selection.value ?? model.settings.moods.first?.id }
+        .onAppear {
+            if let id = model.editMoodRequest { selection.value = id; model.editMoodRequest = nil }
+            selection.value = selection.value ?? model.settings.moods.first?.id
+        }
+        .onChange(of: model.editMoodRequest) { _, id in
+            if let id { selection.value = id; model.editMoodRequest = nil }
+        }
         .confirmationDialog("Delete \(selected.map { "“\($0.name)”" } ?? "this mood")?", isPresented: $confirmDelete.value) {
             Button("Delete", role: .destructive) {
                 guard let id = selection.value else { return }
@@ -262,9 +407,11 @@ struct MoodEditor: View {
                 } else if model.settings.moods.filter({ $0.name == mood.name }).count > 1 {
                     Text("Another mood has this name too.").font(.caption).foregroundStyle(.orange)
                 }
-                TextField("Emoji", text: Binding(get: { mood.emoji },
-                                                 set: { mood.emoji = String($0.prefix(2)) }))
+                LabeledContent("Icon") { SymbolPicker(mood: $mood) }
                 Toggle("Show in the mood grid and menu bar", isOn: Binding(get: { !mood.hidden }, set: { mood.hidden = !$0 }))
+            }
+            if mood.live == .painted {
+                Section("Painting") { PaintEditor(mood: $mood) }
             }
             Section("Lighting") {
                 Picker("Effect", selection: Binding(
@@ -288,7 +435,7 @@ struct MoodEditor: View {
                     }
                 }
                 if let live = mood.live {
-                    Text("Inspired by \(live.inspiredBy). Live effects run while F99 Mood is open." +
+                    Text("Inspired by \(live.inspiredBy). Live effects run while F99 Mood is open: the keyboard can only store its own 18 effects, so your Mac draws these and sends them over the cable about 20 times a second." +
                          (live.reactsToTyping ? " Lights the keys you press (needs Accessibility permission)." : ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -328,7 +475,7 @@ struct MoodEditor: View {
                 Toggle("Start-up mood", isOn: Binding(
                     get: { model.settings.startupMoodID == mood.id },
                     set: { model.setStartupMood($0 ? mood.id : nil) }))
-                Text("Switched on whenever F99 Mood opens. Marked with ★.").font(.caption).foregroundStyle(.secondary)
+                Text("Switched on whenever F99 Mood opens (unless the schedule says otherwise). Its tile shows a power symbol.").font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 HStack {
@@ -569,7 +716,7 @@ struct MacroEditor: View {
             Section("When") {
                 Picker("Active in", selection: $macro.moodID) {
                     Text("Every mood").tag(UUID?.none)
-                    ForEach(model.settings.moods) { Text("\($0.emoji) \($0.name) only").tag(UUID?.some($0.id)) }
+                    ForEach(model.settings.moods) { Text("\($0.name) only").tag(UUID?.some($0.id)) }
                 }
                 HotkeyPicker(hotkey: $macro.hotkey)
             }
@@ -639,35 +786,49 @@ struct KeyboardTab: View {
 
 // MARK: Music
 
+/// The music card: a round play button like a mini player, the level and
+/// tempo, the style and the colours.
 struct MusicControls: View {
     @EnvironmentObject var model: AppModel
+    var compact = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button { model.toggleMusic() } label: {
-                HStack {
-                    Image(systemName: model.musicOn ? "stop.fill" : "music.note")
-                    Text(model.musicOn ? "Stop dancing" : "Dance to music")
-                    Spacer()
-                    if let key = model.settings.musicHotkey {
-                        Text(key.display).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Button { model.toggleMusic() } label: {
+                    Image(systemName: model.musicOn ? "stop.fill" : "play.fill")
+                        .font(.system(size: compact ? 13 : 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: compact ? 30 : 38, height: compact ? 30 : 38)
+                        .background(Circle().fill(LinearGradient(colors: model.settings.musicPalette.colors.prefix(3).map(\.color),
+                                                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
+                        .overlay(Circle().strokeBorder(.black.opacity(0.1)))
+                }
+                .buttonStyle(TileButtonStyle())
+                .disabled(model.busy && !model.musicOn)
+                .accessibilityLabel(model.musicOn ? "Stop dancing to music" : "Dance to music")
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.musicOn ? "Dancing to music" : "Dance to music").font(.system(size: 13, weight: .semibold))
+                    if model.musicOn {
+                        HStack(spacing: 8) { MusicMeterView(meter: model.meter) }
+                    } else {
+                        Text("\(model.settings.musicStyle.rawValue) · \(model.musicMood?.name ?? model.settings.musicPalette.name)")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                .padding(.vertical, 8).padding(.horizontal, 10)
-                .frame(maxWidth: .infinity)
-                .background(model.musicOn ? Color.pink.opacity(0.25) : Color.secondary.opacity(0.1),
-                            in: RoundedRectangle(cornerRadius: 10))
+                Spacer(minLength: 0)
+                if let key = model.settings.musicHotkey, !compact { KeycapBadge(hotkey: key) }
             }
-            .buttonStyle(.plain)
-            .disabled(model.busy && !model.musicOn)
 
-            Picker("", selection: Binding(get: { model.settings.musicStyle }, set: { model.setMusicStyle($0) })) {
+            Picker("Style", selection: Binding(get: { model.settings.musicStyle }, set: { model.setMusicStyle($0) })) {
                 ForEach(MusicStyle.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .controlSize(compact ? .small : .regular)
 
-            PaletteChooser()
+            if !compact || model.musicOn { PaletteChooser() }
         }
     }
 }
@@ -819,6 +980,46 @@ struct StripNote: View {
                 get: { model.settings.stripFollowsColors }, set: { model.setStripFollowsColors($0) }))
             Text("The strip changes colour when you pick a mood or a music theme. It can't flash with each beat: its colour is a saved setting, and saving it many times a second would wear out the keyboard's memory. Press Fn + Shift on the keyboard to change its style (static, blinking, …).")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Pick the icon on a mood's tile from a grid of symbols.
+struct SymbolPicker: View {
+    @EnvironmentObject var model: AppModel
+    @Binding var mood: Mood
+    @StateObject private var open = ViewState(false)
+
+    var body: some View {
+        Button { open.value = true } label: {
+            HStack(spacing: 6) {
+                MoodSwatch(colors: mood.swatch(custom: model.settings.customColors), symbol: mood.symbolName, corner: 6)
+                    .frame(width: 28, height: 28)
+                Image(systemName: "chevron.down").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Choose an icon")
+        .popover(isPresented: $open.value) {
+            VStack(alignment: .leading, spacing: 10) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 6), count: 6), spacing: 6) {
+                    ForEach(Mood.symbolChoices, id: \.self) { name in
+                        Button {
+                            mood.symbol = name
+                            open.value = false
+                        } label: {
+                            Image(systemName: name).font(.system(size: 14))
+                                .frame(width: 30, height: 30)
+                                .background(RoundedRectangle(cornerRadius: 7).fill(mood.symbolName == name ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.05)))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(name)
+                    }
+                }
+                Button("Use the effect's icon") { mood.symbol = nil; open.value = false }
+                    .buttonStyle(.borderless).font(.caption)
+            }
+            .padding(12)
         }
     }
 }

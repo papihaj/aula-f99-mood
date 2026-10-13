@@ -60,7 +60,10 @@ enum MacroRunner {
     /// Typing into other apps needs Accessibility permission.
     static var canType: Bool { AXIsProcessTrusted() }
 
+    /// Shows macOS's own "allow Accessibility" prompt. Only from a button
+    /// press, and only while it isn't allowed.
     static func askForAccessibility() {
+        guard !AXIsProcessTrusted() else { return }
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
     }
@@ -73,7 +76,7 @@ enum MacroRunner {
     }
 
     static func type(_ text: String) {
-        guard canType else { askForAccessibility(); return }
+        guard canType else { NSSound.beep(); return }
         // A password field has focus: never type macro text into it.
         guard !IsSecureEventInputEnabled() else { NSSound.beep(); return }
         // Give the user a moment to let go of the shortcut's modifier keys,

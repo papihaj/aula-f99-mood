@@ -21,7 +21,7 @@ swiftc -swift-version 5 -O -parse-as-library \
   -target "$(uname -m)-apple-macos14.2" \
   Sources/*.swift \
   -framework IOKit -framework Carbon -framework AppKit -framework SwiftUI \
-  -framework CoreAudio -framework AVFoundation -framework Accelerate \
+  -framework CoreAudio -framework AVFoundation -framework Accelerate -framework EventKit \
   -o "$APP/Contents/MacOS/F99Mood"
 
 # macOS ties permissions (Input Monitoring, audio) to the app's signature. An

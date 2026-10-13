@@ -53,6 +53,12 @@ struct Mood: Codable, Identifiable, Hashable {
     var apps: [String] = []
     /// Left out of the mood grids and the menu bar (still in the editor).
     var hidden = false
+    /// An SF Symbol for the mood's tile; nil picks one from the effect.
+    var symbol: String? = nil
+    /// Painted moods: a colour per key, by LED index ("12": colour).
+    var paint: [String: RGB] = [:]
+    /// Painted moods: the colour of keys that aren't painted (nil: off).
+    var paintBase: RGB? = nil
 
     init(id: UUID = UUID(), name: String, emoji: String, lighting: ConfigPage.Lighting,
          hotkey: Hotkey?, live: LiveEffect? = nil) {
@@ -74,6 +80,16 @@ struct Mood: Codable, Identifiable, Hashable {
         paletteName = try? c.decodeIfPresent(String.self, forKey: .paletteName)
         apps = (try? c.decodeIfPresent([String].self, forKey: .apps)) ?? []
         hidden = (try? c.decodeIfPresent(Bool.self, forKey: .hidden)) ?? false
+        symbol = try? c.decodeIfPresent(String.self, forKey: .symbol)
+        paint = (try? c.decodeIfPresent([String: RGB].self, forKey: .paint)) ?? [:]
+        paintBase = try? c.decodeIfPresent(RGB.self, forKey: .paintBase)
+    }
+
+    /// The painted colour of each LED.
+    var paintByLED: [Int: RGB] {
+        var m: [Int: RGB] = [:]
+        for (k, v) in paint { if let i = Int(k) { m[i] = v } }
+        return m
     }
 
     /// A copy with a new id and no shortcut, for "Duplicate" and imports.
@@ -145,6 +161,85 @@ enum PressColor: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Switch to a mood at a time of day, like an alarm.
+struct ScheduleEntry: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var hour: Int
+    var minute: Int
+    /// Days it runs: 1 Sunday ... 7 Saturday, as `Calendar` counts them.
+    var days: Set<Int> = Set(1...7)
+    var moodID: UUID?
+    var enabled = true
+
+    init(hour: Int, minute: Int, days: Set<Int> = Set(1...7), moodID: UUID?) {
+        self.hour = hour; self.minute = minute; self.days = days; self.moodID = moodID
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+        hour = min(max((try? c.decode(Int.self, forKey: .hour)) ?? 0, 0), 23)
+        minute = min(max((try? c.decode(Int.self, forKey: .minute)) ?? 0, 0), 59)
+        let d = (try? c.decodeIfPresent(Set<Int>.self, forKey: .days)) ?? Set(1...7)
+        days = d.filter { (1...7).contains($0) }
+        moodID = try? c.decodeIfPresent(UUID.self, forKey: .moodID)
+        enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
+    }
+
+    var minuteOfDay: Int { hour * 60 + minute }
+
+    /// "Every day", "Weekdays", "Weekends", "Never" or "Mon, Wed".
+    var daysText: String {
+        if days.count == 7 { return "Every day" }
+        if days.isEmpty { return "Never" }
+        if days == Set(2...6) { return "Weekdays" }
+        if days == [1, 7] { return "Weekends" }
+        let names = Calendar.current.shortWeekdaySymbols
+        return days.sorted().map { names[$0 - 1] }.joined(separator: ", ")
+    }
+}
+
+enum Schedule {
+    /// The entry that starts exactly at this minute, if any.
+    static func due(_ entries: [ScheduleEntry], at date: Date, calendar: Calendar = .current) -> ScheduleEntry? {
+        let c = calendar.dateComponents([.weekday, .hour, .minute], from: date)
+        return entries.last { $0.enabled && $0.moodID != nil && $0.days.contains(c.weekday ?? 0)
+            && $0.hour == c.hour && $0.minute == c.minute }
+    }
+
+    /// The entry in charge right now: the latest one that has started today,
+    /// else the latest from an earlier day this week.
+    static func current(_ entries: [ScheduleEntry], at date: Date, calendar: Calendar = .current) -> ScheduleEntry? {
+        let c = calendar.dateComponents([.weekday, .hour, .minute], from: date)
+        guard let weekday = c.weekday else { return nil }
+        let now = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        let live = entries.filter { $0.enabled && $0.moodID != nil }
+        for back in 0..<7 {
+            let day = (weekday - 1 - back + 7) % 7 + 1
+            let candidates = live.filter { $0.days.contains(day) && (back > 0 || $0.minuteOfDay <= now) }
+            if let e = candidates.max(by: { $0.minuteOfDay < $1.minuteOfDay }) { return e }
+        }
+        return nil
+    }
+}
+
+/// Light or dark windows, or follow macOS.
+enum Appearance: String, Codable, CaseIterable, Identifiable {
+    case system = "Match the Mac"
+    case light = "Light"
+    case dark = "Dark"
+    var id: String { rawValue }
+}
+
+/// Built-in typing sounds (made by the app, no recordings), or your own file.
+enum KeySound: String, Codable, CaseIterable, Identifiable {
+    case thock = "Soft thock"
+    case click = "Crisp click"
+    case typewriter = "Typewriter"
+    case bubble = "Bubble"
+    case custom = "My own sound file"
+    var id: String { rawValue }
+}
 
 struct AppSettings: Codable {
     var musicPalette: MusicPalette {
@@ -192,6 +287,29 @@ struct AppSettings: Codable {
     var musicAtLaunch = false
     /// The welcome screen has been seen.
     var welcomeDone = false
+    /// Moods that switch on at set times.
+    var schedule: [ScheduleEntry] = []
+    /// Flash the keyboard before calendar events.
+    var calendarAlerts = false
+    var alertMinutesBefore = 5
+    var alertColor = RGB(hex: 0xffb300)
+    var alertFlashes = 3
+    /// Flash for new messages in Mail.
+    var mailAlerts = false
+    /// Turn the light strip a colour while an alert is waiting (one saved
+    /// change per alert, so it doesn't wear the keyboard's memory).
+    var stripAlerts = true
+    /// A keyboard colour id (4 is magenta: the F99's pink).
+    var stripAlertColor = 4
+    /// A song's progress on the column of keys beside the light strip.
+    var nowPlayingBar = false
+    var nowPlayingColor = RGB(hex: 0xffffff)
+    var appearance: Appearance = .system
+    /// Typing sounds.
+    var keySounds = false
+    var keySound: KeySound = .thock
+    var keySoundVolume = 0.5
+    var keySoundFile: String? = nil
     /// Which set of built-in moods this file was last updated to.
     var moodsVersion = 1
     var musicHotkey: Hotkey? = Hotkey(keyCode: 2, modifiers: Hotkey.control | Hotkey.option) // ⌃⌥D
@@ -232,6 +350,21 @@ struct AppSettings: Codable {
         // A file saved before the welcome screen existed belongs to someone
         // who has already set the app up.
         welcomeDone = opt(.welcomeDone) ?? true
+        schedule = (try? c.decodeLenientArray(ScheduleEntry.self, forKey: .schedule)) ?? []
+        calendarAlerts = opt(.calendarAlerts) ?? false
+        alertMinutesBefore = min(max(opt(.alertMinutesBefore) ?? 5, 0), 60)
+        alertColor = opt(.alertColor) ?? RGB(hex: 0xffb300)
+        alertFlashes = min(max(opt(.alertFlashes) ?? 3, 1), 6)
+        mailAlerts = opt(.mailAlerts) ?? false
+        stripAlerts = opt(.stripAlerts) ?? true
+        stripAlertColor = min(max(opt(.stripAlertColor) ?? 4, 0), F99.colors.count - 1)
+        nowPlayingBar = opt(.nowPlayingBar) ?? false
+        nowPlayingColor = opt(.nowPlayingColor) ?? RGB(hex: 0xffffff)
+        appearance = opt(.appearance) ?? .system
+        keySounds = opt(.keySounds) ?? false
+        keySound = opt(.keySound) ?? .thock
+        keySoundVolume = min(max(opt(.keySoundVolume) ?? 0.5, 0), 1)
+        keySoundFile = opt(.keySoundFile)
         if let colors = try c.decodeIfPresent([RGB].self, forKey: .customColors), !colors.isEmpty {
             customColors = colors
         }
@@ -254,19 +387,15 @@ struct AppSettings: Codable {
         //    name             emoji  effect                 bright speed colour
         mood("Focus",          "🎯", 1,  /* Fixed on */      2, 0, 6, key: 18),
         mood("Gaming",         "🎮", 12, /* Reaction */      4, 2, 0, key: 5), // ⌃⌥G
-        mood("Rainy Day",      "🌧️", 5,  /* Raindrops */     3, 1, 2, key: 19),
         mood("Starry Night",   "✨", 8,  /* Stars twinkle */ 2, 1, 6, key: 20),
         mood("Ocean Waves",    "🌊", 13, /* Sine wave */     3, 1, 5, key: 21),
         mood("Neon Night",     "💜", 11, /* Neon stream */   4, 2, 4, key: 23),
         mood("Rainbow Wheel",  "🌈", 6,  /* Rainbow wheel */ 4, 2, 7, key: 22),
         mood("Retro Arcade",   "🕹️", 10, /* Retro snake */   4, 3, 1, key: 26),
-        mood("Blossom",        "🌸", 17, /* Blossoming */    3, 1, 7, key: 28),
         mood("Storm",          "🌀", 18, /* Rotating storm */4, 3, 7, key: 25),
         mood("Waterfall",      "💧", 16, /* Colorful waterfall */ 3, 2, 7),
-        mood("Windmill",       "🎡", 15, /* Rotating windmill */  3, 2, 7),
         mood("Scanner",        "📡", 14, /* Retinue scanning */   3, 2, 0),
         mood("Sparkle Ripples","💫", 7,  /* Ripples shining */    3, 2, 7),
-        mood("Typing Glow",    "⌨️", 12, /* Reaction */           4, 2, 5),
         mood("Lights out",     "🌙", 1,  /* Fixed on, off */      0, 0, 6, key: 29),
     ] + liveMoods
 
@@ -275,21 +404,43 @@ struct AppSettings: Codable {
     static let liveMoods: [Mood] = [
         //   name              emoji  effect                    bright speed colour
         live("Neon Cascade",   "🌠", .cascade,                 4, 1, 7),
+        electricRipples,
         live("Matrix",         "🟩", .matrix,                  4, 2, 7),
         live("Campfire",       "🔥", .fire,                    4, 2, 7),
         live("Aurora",         "🌌", .aurora,                  3, 1, 7),
-        live("Starlight",      "⭐️", .starlight,               3, 1, 7),
         live("Comet",          "☄️", .comet,                   4, 2, 7),
-        live("Visor",          "🚨", .visor,                   4, 2, 7),
         live("Lava Lamp",      "🫠", .lavaLamp,                3, 1, 7),
-        live("Plasma",         "🔮", .plasma,                  3, 2, 7),
         live("Heartbeat",      "❤️", .heartbeat,               3, 1, 7),
-        live("Galaxy",         "🪐", .galaxy,                  3, 1, 7),
-        live("Spiral",         "🍥", .spiral,                  3, 2, 7),
-        live("Candlelight",    "🕯️", .candle,                  3, 1, 7),
         live("Typing Ripples", "💦", .typingRipples,           4, 2, 7),
         live("Typing Heatmap", "🌡️", .typingHeatmap,           4, 2, 7),
+        wasd,
     ]
+
+    /// Soft rings spreading from the centre in the Electric colours.
+    static let electricRipples: Mood = {
+        var m = live("Electric Ripples", "", .ripples, 4, 2, 7)
+        m.paletteName = MusicPalette.electric.name
+        return m
+    }()
+
+    /// Built-in moods that moved the same way as another one, with only the
+    /// colours changed (Remix does that now). Taken out of settings on
+    /// upgrade unless you changed their effect.
+    static let retiredMoods: [(name: String, effect: Int, live: LiveEffect?)] = [
+        ("Rainy Day", 5, nil), ("Blossom", 17, nil), ("Windmill", 15, nil), ("Typing Glow", 12, nil),
+        ("Starlight", 1, .starlight), ("Visor", 1, .visor), ("Plasma", 1, .plasma),
+        ("Galaxy", 1, .galaxy), ("Spiral", 1, .spiral), ("Candlelight", 1, .candle),
+    ]
+
+    /// A painted example: WASD and the arrows bright on a dim violet board.
+    static let wasd: Mood = {
+        var m = live("WASD", "🎮", .painted, 4, 0, 7)
+        m.paintBase = RGB(hex: 0x1a0640)
+        for name in ["W", "A", "S", "D"] { if let k = F99.keys.first(where: { $0.name == name }) { m.paint["\(k.led)"] = RGB(hex: 0x00e5ff) } }
+        for name in ["Up", "Down", "Left", "Right"] { if let k = F99.keys.first(where: { $0.name == name }) { m.paint["\(k.led)"] = RGB(hex: 0xff2bd6) } }
+        for name in ["Space", "LShift", "LCtrl", "Esc"] { if let k = F99.keys.first(where: { $0.name == name }) { m.paint["\(k.led)"] = RGB(hex: 0x7c4dff) } }
+        return m
+    }()
 
     static func live(_ name: String, _ emoji: String, _ effect: LiveEffect, _ b: Int, _ s: Int, _ c: Int) -> Mood {
         Mood(name: name, emoji: emoji, lighting: .init(effect: 1, brightness: b, speed: s, color: c),
@@ -306,8 +457,9 @@ struct AppSettings: Codable {
         ("Gaming", .init(effect: 12, brightness: 4, speed: 2, color: 0)),
     ]
     /// 2: the effect-based set. 3: Gaming is back. 4: live effects.
-    /// 5: Neon Cascade.
-    static let moodsVersion = 5
+    /// 5: Neon Cascade. 6: WASD (painted keys). 7: Electric Ripples, and
+    /// look-alike moods retired.
+    static let moodsVersion = 7
 
     /// What a new user starts with: the built-in moods, no macros, and the
     /// keyboard left on its own lighting until they pick a mood. Your own
@@ -326,6 +478,14 @@ struct AppSettings: Codable {
         moods.removeAll { m in
             Self.firstMoods.contains { $0.0 == m.name && $0.1 == m.lighting }
                 && !Self.builtInMoods.contains { $0.name == m.name }
+        }
+        if moodsVersion < 7 {
+            for r in Self.retiredMoods {
+                for m in moods where m.name == r.name && m.lighting.effect == r.effect && m.live == r.live
+                    && m.id != startupMoodID && !schedule.contains(where: { $0.moodID == m.id }) {
+                    deleteMood(m.id)
+                }
+            }
         }
         addMissingBuiltInMoods()
         if let id = activeMoodID, !moods.contains(where: { $0.id == id }) { activeMoodID = nil }
@@ -393,6 +553,7 @@ struct AppSettings: Codable {
         moods.removeAll { $0.id == id }
         if activeMoodID == id { activeMoodID = nil }
         if startupMoodID == id { startupMoodID = nil }
+        for i in schedule.indices where schedule[i].moodID == id { schedule[i].moodID = nil }
         for i in macros.indices where macros[i].moodID == id { macros[i].moodID = nil }
     }
 }

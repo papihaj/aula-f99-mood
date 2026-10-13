@@ -19,6 +19,8 @@ enum LiveEffect: String, Codable, CaseIterable, Identifiable {
     case candle = "Candlelight"
     case typingRipples = "Typing Ripples"
     case typingHeatmap = "Typing Heatmap"
+    case painted = "Painted keys"
+    case ripples = "Ripples"
     var id: String { rawValue }
 
     /// Where the idea comes from.
@@ -39,6 +41,8 @@ enum LiveEffect: String, Codable, CaseIterable, Identifiable {
         case .candle: return "Philips Hue \"Candle\" scenes"
         case .typingRipples: return "Razer \"Ripple\", Corsair \"Type Lighting\", QMK \"Splash\""
         case .typingHeatmap: return "QMK \"Typing Heatmap\""
+        case .painted: return "per-key colours in Razer Synapse, Wooting and VIA"
+        case .ripples: return "Razer Chroma \"Ripple\" and the F99's own Ripples shining, in any colour theme"
         }
     }
 
@@ -65,7 +69,8 @@ enum LiveEffect: String, Codable, CaseIterable, Identifiable {
         case .lavaLamp: return p([0x3b0a78, 0xd500f9, 0xff6d00])
         case .heartbeat: return p([0x400000, 0xff1744, 0xff8a80])
         case .typingHeatmap: return p([0x0033ff, 0x00e676, 0xffea00, 0xff1744])
-        case .plasma, .spiral, .typingRipples:
+        case .ripples: return MusicPalette.electric
+        case .plasma, .spiral, .typingRipples, .painted:
             return MusicPalette.presets.first { $0.name == "Rainbow" }!
         }
     }
@@ -90,6 +95,9 @@ final class LiveRenderer {
     var haloSize = 1.0
     /// Seconds for a pressed key to fade.
     var pressFade = 0.45
+    /// Painted keys: a colour per LED, and the colour of the rest.
+    var paint: [Int: RGB] = [:]
+    var paintBase: RGB? = nil
 
     private var start = Date()
     private var presses: [(led: Int, x: Double, y: Double, at: Date)] = []
@@ -263,6 +271,17 @@ final class LiveRenderer {
         case .typingHeatmap:
             let h = heat[key.led]
             return (palette.sample(h, wrap: false), 0.05 + 0.95 * min(h * 1.3, 1))
+
+        case .ripples:
+            // Soft rings spreading out from the centre, the colour drifting
+            // through the theme as they go.
+            let ring = pow(0.5 + 0.5 * sin(dist * 7 - t * 2.6), 3)
+            return (palette.sample(dist * 0.35 - t * 0.06, wrap: true), 0.2 + 0.8 * ring)
+
+        case .painted:
+            if let c = paint[key.led] { return (c, 1) }
+            if let base = paintBase { return (base, 1) }
+            return (RGB(0, 0, 0), 0)
         }
     }
 
@@ -332,6 +351,70 @@ final class LiveRenderer {
         guard hash(led, n) < 0.3 else { return 0 }
         let f = cycle - floor(cycle)
         return pow(sin(f * .pi), 2)
+    }
+}
+
+/// Drawn on top of whatever is streaming: a song's progress up the column of
+/// keys beside the light strip, and calendar alert flashes.
+struct Overlays {
+    /// 0...1, or nil for no bar.
+    var progress: Double?
+    var progressColor = RGB(1, 1, 1)
+    var flash: Flash?
+
+    struct Flash {
+        var start: Date
+        var color: RGB
+        var count: Int
+        static let period = 0.6 // seconds per flash: under two a second
+        func intensity(at now: Date) -> Double? {
+            let e = now.timeIntervalSince(start)
+            guard e >= 0, e < Double(count) * Self.period else { return nil }
+            let phase = e.truncatingRemainder(dividingBy: Self.period) / Self.period
+            return pow(sin(.pi * phase), 2)
+        }
+    }
+
+    /// The keys beside the light strip, bottom to top.
+    static let column: [Int] = ["Right", "Num1", "Num4", "Num7", "NumLock", "Home"].compactMap { name in
+        F99.keys.first { $0.name == name }?.led
+    }
+
+    var isEmpty: Bool { progress == nil && flash == nil }
+
+    mutating func apply(_ frame: [UInt8], now: Date = Date()) -> [UInt8] {
+        guard !isEmpty else { return frame }
+        var out = frame
+        func set(_ led: Int, _ c: RGB, _ v: Double) {
+            guard led * 3 + 2 < out.count else { return }
+            let level = v * MusicRenderer.maxBrightness
+            out[led * 3] = UInt8(min(max(c.r * level, 0), 1) * 255)
+            out[led * 3 + 1] = UInt8(min(max(c.g * level, 0), 1) * 255)
+            out[led * 3 + 2] = UInt8(min(max(c.b * level, 0), 1) * 255)
+        }
+        if let p = progress {
+            let filled = min(max(p, 0), 1) * Double(Self.column.count)
+            for (i, led) in Self.column.enumerated() {
+                let f = min(max(filled - Double(i), 0), 1)
+                // Unfilled keys stay faintly lit, so the bar reads as a track.
+                set(led, progressColor, 0.08 + 0.92 * f)
+            }
+        }
+        if let f = flash {
+            if let k = f.intensity(at: now) {
+                let level = k * MusicRenderer.maxBrightness
+                for i in stride(from: 0, to: out.count - 2, by: 3) {
+                    let target = [f.color.r, f.color.g, f.color.b]
+                    for j in 0..<3 {
+                        let a = Double(out[i + j]) / 255
+                        out[i + j] = UInt8(min(max(a + (target[j] * level - a) * k, 0), 1) * 255)
+                    }
+                }
+            } else if now.timeIntervalSince(f.start) >= 0 {
+                flash = nil
+            }
+        }
+        return out
     }
 }
 

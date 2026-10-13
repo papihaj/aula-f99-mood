@@ -1,4 +1,5 @@
 import SwiftUI
+import IOKit.hid
 
 /// "Keep every key lit" and how bright, used in a few places.
 struct KeepLitControls: View {
@@ -96,11 +97,15 @@ struct GeneralTab: View {
                 Picker("Start-up mood", selection: Binding(get: { model.settings.startupMoodID },
                                                            set: { model.setStartupMood($0) })) {
                     Text("None: keep the keyboard's own lighting").tag(UUID?.none)
-                    ForEach(model.settings.moods) { Text("\($0.emoji) \($0.name)").tag(UUID?.some($0.id)) }
+                    ForEach(model.settings.moods) { Text($0.name).tag(UUID?.some($0.id)) }
                 }
-                Text("Switched on whenever F99 Mood opens. Marked with ★.").font(.caption).foregroundStyle(.secondary)
+                Text("Switched on whenever F99 Mood opens, unless a time on the Schedule says otherwise.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Appearance") {
+                Picker("Windows", selection: $model.settings.appearance) {
+                    ForEach(Appearance.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
                 Toggle("Show in the Dock", isOn: Binding(get: { model.settings.showInDock },
                                                          set: { model.setShowInDock($0) }))
                 Text("F99 Mood is always in the menu bar (the keyboard icon).").font(.caption).foregroundStyle(.secondary)
@@ -109,6 +114,7 @@ struct GeneralTab: View {
                     openWindow(id: "main")
                 }
             }
+            PermissionsSection()
             Section("Your settings") {
                 LabeledContent("Saved in", value: Storage.directory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     .textSelection(.enabled)
@@ -127,6 +133,67 @@ struct GeneralTab: View {
     }
 }
 
+/// What macOS really reports for each permission, with a way to fix one
+/// whose switch looks on but belongs to an older copy of the app.
+struct PermissionsSection: View {
+    @EnvironmentObject var model: AppModel
+    @StateObject private var tick = ViewState(0)
+    private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Section {
+            row("Accessibility", "Typing effects, key-press glow, typing sounds and typing macros",
+                AXIsProcessTrusted(), pane: "Privacy_Accessibility", service: "Accessibility") {
+                MacroRunner.askForAccessibility()
+            }
+            row("Input Monitoring", "Talking to the keyboard over USB",
+                IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted,
+                pane: "Privacy_ListenEvent", service: "ListenEvent") {
+                IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+                model.connect()
+            }
+            if model.settings.calendarAlerts || CalendarWatcher.status != .notDetermined {
+                row("Calendars", "Calendar alerts", CalendarWatcher.allowed, pane: "Privacy_Calendars", service: "Calendar") {
+                    model.requestCalendarAccess { _ in }
+                }
+            }
+        } header: {
+            Text("Permissions")
+        } footer: {
+            Text("If a switch in System Settings already looks on but this says it isn't, the switch belongs to an older build of F99 Mood. Fix clears it and asks once more; allow it and it stays allowed.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .id(tick.value)
+        .onReceive(timer) { _ in tick.value += 1 }
+    }
+
+    private func row(_ name: String, _ use: String, _ ok: Bool, pane: String, service: String,
+                     ask: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundStyle(ok ? .green : .orange)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name)
+                Text(ok ? "Allowed · \(use)" : "Not allowed · \(use)").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if !ok {
+                Button("Fix") {
+                    // Clear any old entry for this app, then ask afresh.
+                    let p = Process()
+                    p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+                    p.arguments = ["reset", service, Bundle.main.bundleIdentifier ?? "local.f99mood"]
+                    try? p.run()
+                    p.waitUntilExit()
+                    ask()
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
+                }
+                .help("Clears the old entry and asks again")
+            }
+        }
+    }
+}
+
 /// Shown while a live effect wants key presses but macOS hasn't allowed it.
 struct AccessibilityBanner: View {
     let compact: Bool
@@ -135,10 +202,11 @@ struct AccessibilityBanner: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "hand.raised").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 4) {
-                Text("To light up the keys you press, allow F99 Mood under Privacy & Security → Accessibility.")
+                Text("To light up or sound the keys you press, allow F99 Mood under Privacy & Security → Accessibility. Already switched on there? It's an old entry: use Fix under Settings → General → Permissions.")
                     .font(compact ? .caption : .callout)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Open Settings") {
+                Button("Allow…") {
+                    MacroRunner.askForAccessibility()
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
                 }
                 .controlSize(compact ? .small : .regular)
@@ -185,7 +253,7 @@ struct WelcomeView: View {
                     Picker("Start-up mood", selection: Binding(get: { model.settings.startupMoodID },
                                                                set: { model.setStartupMood($0) })) {
                         Text("None: keep my keyboard's lighting").tag(UUID?.none)
-                        ForEach(model.settings.moods) { Text("\($0.emoji) \($0.name)").tag(UUID?.some($0.id)) }
+                        ForEach(model.settings.moods) { Text($0.name).tag(UUID?.some($0.id)) }
                     }
                     Toggle("Keep every key lit, so I can read the letters", isOn: Binding(
                         get: { model.settings.keepKeysLit }, set: { model.setKeepKeysLit($0) }))
@@ -198,7 +266,7 @@ struct WelcomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("Everything here can be changed later in Moods & Macros. Live effects and music ask for Accessibility and audio permission only when you first use them.")
+            Text("Everything here can be changed later in Settings. Live effects and music ask for Accessibility and audio permission only when you first use them.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             HStack {
