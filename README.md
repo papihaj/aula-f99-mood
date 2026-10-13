@@ -591,21 +591,7 @@ detected as beats.
 
 ## Credits
 
-- App and app icon: Papiha Joharapurkar. The icon is drawn by
-  `Tools/make_icon.swift`.
-- Music design: [WLED sound reactive](https://github.com/wled/WLED),
-  [LedFx](https://github.com/LedFx/LedFx),
-  [audio-reactive-led-strip](https://github.com/scottlawsonbc/audio-reactive-led-strip),
-  Nanoleaf Rhythm, [Oklab](https://bottosson.github.io/posts/oklab/) and
-  [WCAG 2.3.1](https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold).
-- Protocol research: [AulaSofwareLinux](https://github.com/leisiji/AulaSofwareLinux)
-  (MIT) and [keylux](https://github.com/SibteProf/keylux) (MIT / Apache-2.0).
-- Effect names, key positions and value ranges come from AULA's own F99
-  configuration file.
-- Typing sounds: real keystroke recordings, all CC0, by
-  [StavSounds](https://freesound.org/people/StavSounds/packs/42151/) (Tactile,
-  Clicky) and [unicaegames](https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes)
-  (Soft). See `Resources/Sounds/CREDITS.md`.
+Made by Papiha Joharapurkar.
 
 AULA and EPOMAKER are trademarks of their owners. This project is not
 affiliated with or endorsed by either company. Use it at your own risk, on
