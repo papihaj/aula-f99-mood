@@ -106,12 +106,23 @@ struct MainView: View {
 /// approximation, because the keyboard draws those effects itself.
 struct KeyboardPicture: View {
     @EnvironmentObject var model: AppModel
+    /// `.inactive` while another app is in front.
+    @Environment(\.controlActiveState) private var activeState
+
+    /// Nothing moves: a steady or switched-off mood with no live effect or music.
+    private var isStill: Bool {
+        if model.liveMood != nil || model.musicOn { return false }
+        guard let l = model.shownLighting else { return true }
+        return l.brightness == 0 || l.effect == 1
+    }
 
     var body: some View {
         // The colours change every frame; the key labels and outlines don't,
         // so they're a separate layer drawn only when the size changes.
+        // 12 frames a second is smooth enough for a preview, and it stops
+        // while another app is in front or nothing is moving, to save CPU.
         ZStack {
-            TimelineView(.animation(minimumInterval: 1 / 20)) { context in
+            TimelineView(.animation(minimumInterval: 1 / 12, paused: isStill || activeState == .inactive)) { context in
                 Canvas { gc, size in
                     let scale = min(size.width / F99.boardSize.w, size.height / F99.boardSize.h)
                     let t = context.date.timeIntervalSinceReferenceDate
@@ -229,7 +240,8 @@ enum LightingSimulator {
         guard let effect = F99.effect(l.effect) else { return .clear }
         let brightness = Double(min(max(l.brightness, 0), 4)) / 4
         guard brightness > 0 else { return .clear }
-        let speed = 0.4 + Double(l.speed) * 0.4
+        // Calmer than the keyboard itself, so the window isn't busy.
+        let speed = (0.4 + Double(l.speed) * 0.4) * 0.6
         let ts = t * speed
         let x = key.x, y = key.y
         // Centre-relative position, with the board's 3:1 shape evened out.

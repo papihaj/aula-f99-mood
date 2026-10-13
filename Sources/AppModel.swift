@@ -165,7 +165,9 @@ final class AppModel: ObservableObject {
 
     private func tick() {
         ticks += 1
-        let visible = NSApp?.windows.contains { $0.isVisible && $0.occlusionState.contains(.visible) } ?? true
+        // The on-screen picture only animates while F99 Mood is in front.
+        let visible = (NSApp?.isActive ?? true)
+            && (NSApp?.windows.contains { $0.isVisible && $0.occlusionState.contains(.visible) } ?? true)
         queue.async { [weak self] in self?.windowVisible = visible }
         if ticks % 3 == 0 { poll() }
         checkIdle()
@@ -871,7 +873,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Runs on `queue`, 20 times a second.
-    /// Some F99 Mood window is on screen (updated once a second).
+    /// F99 Mood is in front with a window on screen (updated once a second).
     nonisolated(unsafe) private var windowVisible = true
 
     nonisolated private func sendLiveFrame() {

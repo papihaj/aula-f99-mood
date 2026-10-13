@@ -1,4 +1,5 @@
 import SwiftUI
+import IOKit.hid
 
 @main
 enum Main {
@@ -23,6 +24,16 @@ enum Main {
         }
         if CommandLine.arguments.contains("--probe") {
             print(Keyboard.probe())
+            exit(0)
+        }
+        // --permissions: what macOS currently allows this copy of the app.
+        // Launch it with `open -n -W --stdout <file> "F99 Mood.app" --args --permissions`,
+        // so macOS checks the app itself rather than Terminal.
+        if CommandLine.arguments.contains("--permissions") {
+            let input = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+            print("Input Monitoring: " + (input == kIOHIDAccessTypeGranted ? "allowed"
+                                          : input == kIOHIDAccessTypeDenied ? "not allowed" : "not asked yet"))
+            print("Accessibility: " + (AXIsProcessTrusted() ? "allowed" : "not allowed"))
             exit(0)
         }
         if CommandLine.arguments.contains("--listen") {
