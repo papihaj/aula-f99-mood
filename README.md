@@ -591,7 +591,7 @@ detected as beats.
 
 ## Credits
 
-- App and app icon: papihaj. The icon is drawn by
+- App and app icon: Papiha Joharapurkar. The icon is drawn by
   `Tools/make_icon.swift`.
 - Music design: [WLED sound reactive](https://github.com/wled/WLED),
   [LedFx](https://github.com/LedFx/LedFx),
