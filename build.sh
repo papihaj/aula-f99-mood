@@ -15,6 +15,8 @@ cp Info.plist "$APP/Contents/Info.plist"
 # The app icon; drawn by Tools/make_icon.swift if it isn't there yet.
 [[ -f Resources/AppIcon.icns ]] || swift Tools/make_icon.swift Resources
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Typing sounds: recorded keystrokes (CC0, see Resources/Sounds/CREDITS.md).
+cp -R Resources/Sounds "$APP/Contents/Resources/Sounds"
 
 echo "Building app…"
 swiftc -swift-version 5 -O -parse-as-library \

@@ -16,7 +16,7 @@ struct KeepLitControls: View {
                 Text("\(Int((model.settings.keysLitLevel * 100).rounded()))%").monospacedDigit().frame(width: 40)
             }
         }
-        Text("In live effects and music, no key drops below this brightness, and very dark colours are lifted, so you can always read the letters. The keyboard's own built-in effects draw themselves, so this can't apply to them.")
+        Text("Keeps letters readable in live effects and music.")
             .font(.caption).foregroundStyle(.secondary)
     }
 }
@@ -61,7 +61,7 @@ struct LightsTab: View {
                         Text(String(format: "%.1f s", model.settings.pressFade)).monospacedDigit().frame(width: 56)
                     }
                 }
-                Text("The key you press flashes bright and a halo spreads around it. F99 Mood needs Accessibility permission to see key presses in other apps; it only uses which key, to light it, and stores nothing.")
+                Text("Needs Accessibility permission.")
                     .font(.caption).foregroundStyle(.secondary)
                 if model.needsAccessibility { AccessibilityBanner(compact: false) }
             }
@@ -70,8 +70,6 @@ struct LightsTab: View {
                     Text("Never").tag(0)
                     ForEach([1, 2, 5, 10, 15, 30], id: \.self) { Text("\($0) minute\($0 == 1 ? "" : "s")").tag($0) }
                 }
-                Text("Any key or mouse movement brings them straight back. (This reads only how long since the last input, never what it was.)")
-                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Lights off while the screen is locked or asleep", isOn: $model.settings.darkWhenLocked)
                 Text("They come back when you unlock.").font(.caption).foregroundStyle(.secondary)
             }
@@ -99,7 +97,6 @@ struct GeneralTab: View {
                     Text("None: keep the keyboard's own lighting").tag(UUID?.none)
                     ForEach(model.settings.moods) { Text($0.name).tag(UUID?.some($0.id)) }
                 }
-                Text("Switched on whenever F99 Mood opens, unless a time on the Schedule says otherwise.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Appearance") {
                 Picker("Windows", selection: $model.settings.appearance) {
@@ -111,7 +108,7 @@ struct GeneralTab: View {
                 Text("F99 Mood is always in the menu bar (the keyboard icon).").font(.caption).foregroundStyle(.secondary)
                 Button("Show the welcome screen again") {
                     model.settings.welcomeDone = false
-                    openWindow(id: "main")
+                    model.pane = .home // the welcome sheet belongs to Home
                 }
             }
             PermissionsSection()
@@ -120,15 +117,13 @@ struct GeneralTab: View {
                     .textSelection(.enabled)
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Storage.settingsURL]) }
                 Button("Reset all settings…", role: .destructive) { confirmReset.value = true }
-                Text("Moods are shared between computers with Export and Import (the ⋯ button under the mood list).")
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .confirmationDialog("Reset F99 Mood to how it was when first installed?", isPresented: $confirmReset.value) {
             Button("Reset", role: .destructive) { model.resetAllSettings() }
         } message: {
-            Text("Your moods, macros and options go back to the defaults. Export any moods you want to keep first. The copy of your keyboard's original lighting is kept.")
+            Text("Moods, macros and options go back to the defaults.")
         }
     }
 }
@@ -160,7 +155,7 @@ struct PermissionsSection: View {
         } header: {
             Text("Permissions")
         } footer: {
-            Text("If a switch in System Settings already looks on but this says it isn't, the switch belongs to an older build of F99 Mood. Fix clears it and asks once more; allow it and it stays allowed.")
+            Text("Switch already on but still asked? Press Fix.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .id(tick.value)
@@ -202,7 +197,7 @@ struct AccessibilityBanner: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "hand.raised").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 4) {
-                Text("To light up or sound the keys you press, allow F99 Mood under Privacy & Security → Accessibility. Already switched on there? It's an old entry: use Fix under Settings → General → Permissions.")
+                Text("Allow F99 Mood in Privacy & Security → Accessibility. Already on? Press Fix in General.")
                     .font(compact ? .caption : .callout)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Allow…") {
@@ -236,7 +231,7 @@ struct WelcomeView: View {
             GroupBox("1. Connect the keyboard") {
                 VStack(alignment: .leading, spacing: 6) {
                     StatusLine()
-                    Text("Use the USB-C cable; the 2.4 GHz receiver and Bluetooth can't change the lighting. If macOS asks, allow F99 Mood under Privacy & Security → Input Monitoring, then press Reconnect.")
+                    Text("Use the USB-C cable. If asked, allow Input Monitoring, then Reconnect.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     HStack {
                         Button("Reconnect") { model.connect() }.disabled(model.busy)
@@ -266,8 +261,6 @@ struct WelcomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("Everything here can be changed later in Settings. Live effects and music ask for Accessibility and audio permission only when you first use them.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             HStack {
                 Spacer()

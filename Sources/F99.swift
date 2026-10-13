@@ -59,6 +59,12 @@ enum F99 {
 
     static func effect(_ id: Int) -> Effect? { effects.first { $0.id == id } }
 
+    /// The effects the mood editor offers: one of each kind of movement
+    /// (Fixed on, Breathing, Rainbow wheel, Stars twinkle, Reaction, Sine
+    /// wave). The rest look like one of these, so they're left out to keep the
+    /// list short; the keyboard still has them under Fn + \.
+    static let offeredEffects = [1, 2, 6, 8, 12, 13]
+
     struct FirmwareColor: Identifiable, Hashable {
         let id: Int
         let name: String

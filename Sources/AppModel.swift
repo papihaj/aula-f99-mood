@@ -99,6 +99,8 @@ final class AppModel: ObservableObject {
     private var stripBeforeAlert: Int?
     /// A mood the editor should open (set by "New mood").
     @Published var editMoodRequest: UUID?
+    /// The pane showing in the main window's sidebar.
+    @Published var pane: EditorView.Pane = .home
     /// Why the typing sound can't play, if it can't.
     @Published private(set) var keySoundError: String?
     /// A song is playing in Spotify or Music (for the now-playing bar).
@@ -1319,7 +1321,10 @@ final class AppModel: ObservableObject {
 
     /// Hear the typing sound once, from the settings.
     func previewKeySound() {
-        updateExtras()
+        // Load the sound even while typing sounds are off, so you can hear
+        // it before turning them on.
+        guard (try? keySounds.load(settings.keySound, file: settings.keySoundFile)) != nil else { return }
+        keySounds.volume = settings.keySoundVolume
         keySounds.play(keyCode: 0)
     }
 
@@ -1391,25 +1396,6 @@ final class AppModel: ObservableObject {
         guard let i = settings.moods.firstIndex(where: { $0.id == id }) else { return }
         if remixOriginals[id] == nil { remixOriginals[id] = settings.moods[i] }
         change(&settings.moods[i])
-    }
-
-    /// Random new colours for the mood: another colour or theme, or, for a
-    /// painted mood, every colour turned round the colour wheel.
-    func shuffleColors(_ id: UUID) {
-        guard let mood = settings.moods.first(where: { $0.id == id }) else { return }
-        remix(id) { m in
-            if m.live == .painted {
-                let turn = Double.random(in: 0.15...0.85)
-                m.paint = m.paint.mapValues { $0.hueRotated(turn) }
-                m.paintBase = m.paintBase?.hueRotated(turn)
-            } else if m.live != nil {
-                let names = MusicPalette.presets.map(\.name).filter { $0 != mood.paletteName }
-                m.paletteName = names.randomElement()
-            } else {
-                let choices = (0...F99.colorful).filter { $0 != mood.lighting.color }
-                m.lighting.color = choices.randomElement() ?? mood.lighting.color
-            }
-        }
     }
 
     func revertRemix(_ id: UUID) {

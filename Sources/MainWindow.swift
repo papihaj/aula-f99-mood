@@ -3,8 +3,6 @@ import SwiftUI
 /// The main window: a live picture of the F99, moods, and music controls.
 struct MainView: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.openWindow) private var openWindow
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
@@ -25,12 +23,6 @@ struct MainView: View {
                     .background(Capsule().fill(Color.pink.opacity(0.12)))
                 }
                 Spacer()
-                Button {
-                    openWindow(id: "editor")
-                } label: {
-                    Label("Settings", systemImage: "slider.horizontal.3")
-                }
-                .help("Moods, schedule, macros, music, lights and more")
             }
 
             Card(padding: 12) {
@@ -57,9 +49,9 @@ struct MainView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    moodSection("Keyboard effects", "Run on the keyboard itself, even after you quit",
+                    moodSection("Keyboard effects", nil,
                                 model.settings.moods.filter { $0.live == nil && !$0.hidden })
-                    moodSection("Live effects", "Drawn by your Mac while F99 Mood is open",
+                    moodSection("Live effects", nil,
                                 model.settings.moods.filter { $0.live != nil && !$0.hidden }, info: Self.liveInfo)
                 }
                 .padding(.vertical, 2)
@@ -76,7 +68,7 @@ struct MainView: View {
                                                                    set: { model.setStripFollowsColors($0) }))
                     Toggle("Keep every key lit", isOn: Binding(get: { model.settings.keepKeysLit },
                                                                set: { model.setKeepKeysLit($0) }))
-                        .help("In live effects and music, no key drops below a set brightness, so you can always read the letters.")
+                        .help("Keeps letters readable in live effects and music")
                 }
                 .toggleStyle(.checkbox)
                 .font(.caption)
@@ -93,7 +85,7 @@ struct MainView: View {
     }
 
     @ViewBuilder
-    private func moodSection(_ title: String, _ note: String, _ moods: [Mood], info: String? = nil) -> some View {
+    private func moodSection(_ title: String, _ note: String?, _ moods: [Mood], info: String? = nil) -> some View {
         if !moods.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 4) {
@@ -108,27 +100,14 @@ struct MainView: View {
         }
     }
 
-    static let liveInfo = """
-    The F99 can only store and play its own 18 built-in effects, the ones Fn + \\ cycles through. \
-    Live effects are new animations the keyboard doesn't have: your Mac works out every key's colour \
-    about 20 times a second and sends it over the USB-C cable. So they need F99 Mood running and the \
-    cable plugged in. When you quit or unplug, the keyboard goes back to the lighting it had before.
-    """
+    static let liveInfo = "Drawn by your Mac, so they need F99 Mood open and the USB-C cable plugged in."
 
     private var caption: String {
-        let where_ = model.canWrite ? "on your keyboard" : "preview only: plug in the F99 by USB-C to light it up"
-        if model.musicOn {
-            let colours = model.musicMood.map { "\($0.name) colours" } ?? model.settings.musicPalette.name
-            return "Dancing to music · \(model.settings.musicStyle.rawValue), \(colours) · \(where_)"
-        }
-        if let mood = model.liveMood, let live = mood.live {
-            return "\(mood.name) · live \(live.rawValue) · \(where_)"
-        }
-        if let l = model.shownLighting, let effect = F99.effect(l.effect) {
-            let mood = model.activeMood.map { "\($0.name) · " } ?? ""
-            return "\(mood)\(effect.name), brightness \(l.brightness)/4 · \(where_)"
-        }
-        return "Pick a mood or start the music"
+        let preview = model.canWrite ? "" : " · preview, plug in by USB-C"
+        if model.musicOn { return "Dancing · \(model.settings.musicStyle.rawValue)" + preview }
+        if let mood = model.liveMood ?? model.activeMood { return mood.name + preview }
+        if let l = model.shownLighting, let effect = F99.effect(l.effect) { return effect.name + preview }
+        return "Pick a mood"
     }
 }
 
@@ -416,7 +395,6 @@ struct MusicMeterView: View {
 /// The last tile in a group: make a new mood and open it in the editor.
 struct NewMoodTile: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.openWindow) private var openWindow
     let live: Bool
 
     var body: some View {
@@ -446,9 +424,7 @@ struct NewMoodTile: View {
     }
 
     private func make(_ kind: AppModel.NewMoodKind) {
-        model.createMood(kind)
-        openWindow(id: "editor")
-        NSApp.activate(ignoringOtherApps: true)
+        model.createMood(kind) // switches the sidebar to Moods
     }
 }
 
@@ -459,7 +435,7 @@ struct WirelessNote: View {
             Image(systemName: "cable.connector").foregroundStyle(.secondary).font(.title3)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Changing the lights needs the USB-C cable").font(.callout.weight(.semibold))
-                Text("The F99 only takes lighting changes over the cable, not Bluetooth or the 2.4 GHz receiver. You can type wirelessly any time: keyboard-effect moods are saved on the keyboard and keep running, and typing sounds, macros and the schedule still work here.")
+                Text("Lighting changes need the USB-C cable.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }

@@ -183,13 +183,13 @@ struct TileButtonStyle: ButtonStyle {
 
 // MARK: Editor window
 
-/// The settings window, laid out like System Settings: a sidebar of panes
-/// with coloured icons.
+/// The main window, laid out like System Settings: a sidebar of panes with
+/// coloured icons. Home is the keyboard picture, moods and music.
 struct EditorView: View {
     @EnvironmentObject var model: AppModel
-    @StateObject private var pane = ViewState(Pane.moods)
 
     enum Pane: String, CaseIterable, Identifiable {
+        case home = "Home"
         case moods = "Moods", schedule = "Schedule", macros = "Macros", music = "Music"
         case lights = "Lights", alerts = "Alerts & Now Playing", sounds = "Typing Sounds"
         case keyboard = "Keyboard", general = "General"
@@ -197,6 +197,7 @@ struct EditorView: View {
 
         var symbol: String {
             switch self {
+            case .home: "house.fill"
             case .moods: "paintpalette.fill"
             case .schedule: "clock.fill"
             case .macros: "command"
@@ -211,6 +212,7 @@ struct EditorView: View {
 
         var tint: Color {
             switch self {
+            case .home: .blue
             case .moods: .purple
             case .schedule: .orange
             case .macros: .indigo
@@ -225,7 +227,10 @@ struct EditorView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: Binding(get: { pane.value }, set: { if let p = $0 { pane.value = p } })) {
+            List(selection: Binding(get: { model.pane }, set: { if let p = $0 { model.pane = p } })) {
+                Section {
+                    row(.home)
+                }
                 Section {
                     ForEach([Pane.moods, .schedule, .macros, .music]) { row($0) }
                 }
@@ -240,7 +245,8 @@ struct EditorView: View {
             .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } detail: {
             Group {
-                switch pane.value {
+                switch model.pane {
+                case .home: MainView()
                 case .moods: MoodsTab().padding(12)
                 case .schedule: ScheduleTab()
                 case .macros: MacrosTab().padding(12)
@@ -252,11 +258,11 @@ struct EditorView: View {
                 case .general: GeneralTab()
                 }
             }
-            .navigationTitle(pane.value.rawValue)
+            .navigationTitle(model.pane == .home ? "F99 Mood" : model.pane.rawValue)
         }
-        .frame(minWidth: 860, minHeight: 540)
-        .onAppear { if model.editMoodRequest != nil { pane.value = .moods } }
-        .onChange(of: model.editMoodRequest) { _, id in if id != nil { pane.value = .moods } }
+        .frame(minWidth: 920, minHeight: 680)
+        .onAppear { if model.editMoodRequest != nil { model.pane = .moods } }
+        .onChange(of: model.editMoodRequest) { _, id in if id != nil { model.pane = .moods } }
     }
 
     private func row(_ p: Pane) -> some View {
@@ -426,17 +432,19 @@ struct MoodEditor: View {
                         }
                     })) {
                     Section("Keyboard's own effects (Fn + \\)") {
-                        ForEach(F99.effects) { Text($0.name).tag($0.id) }
+                        ForEach(F99.effects.filter { F99.offeredEffects.contains($0.id) || (mood.live == nil && $0.id == mood.lighting.effect) }) {
+                            Text($0.name).tag($0.id)
+                        }
                     }
                     Section("Live effects, drawn by your Mac") {
-                        ForEach(Array(LiveEffect.allCases.enumerated()), id: \.offset) { i, e in
+                        ForEach(Array(LiveEffect.allCases.enumerated()).filter { LiveEffect.offered.contains($0.element) || $0.element == mood.live },
+                                id: \.offset) { i, e in
                             Text(e.rawValue).tag(100 + i)
                         }
                     }
                 }
                 if let live = mood.live {
-                    Text("Inspired by \(live.inspiredBy). Live effects run while F99 Mood is open: the keyboard can only store its own 18 effects, so your Mac draws these and sends them over the cable about 20 times a second." +
-                         (live.reactsToTyping ? " Lights the keys you press (needs Accessibility permission)." : ""))
+                    Text("Runs while F99 Mood is open" + (live.reactsToTyping ? " · needs Accessibility" : ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 LevelSlider(title: "Brightness", value: $mood.lighting.brightness, range: F99.brightnessLevels,
@@ -468,14 +476,13 @@ struct MoodEditor: View {
             }
             Section("Switch on automatically") {
                 AppList(apps: $mood.apps)
-                Text("While one of these apps is in front, this mood is on; switching away goes back to the mood from before. Great for games, video calls or your code editor.")
+                Text("On while one of these apps is in front.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Start-up mood", isOn: Binding(
                     get: { model.settings.startupMoodID == mood.id },
                     set: { model.setStartupMood($0 ? mood.id : nil) }))
-                Text("Switched on whenever F99 Mood opens (unless the schedule says otherwise). Its tile shows a power symbol.").font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 HStack {
@@ -664,7 +671,7 @@ struct MacrosTab: View {
                         }
                     }
                     if model.settings.macros.isEmpty {
-                        Text("No macros yet. Press + to make one: a shortcut that types text for you or opens an app or link.")
+                        Text("No macros yet. Press + to add one.")
                             .font(.caption).foregroundStyle(.secondary).padding(8)
                     }
                     ListButtons(add: {
@@ -710,7 +717,7 @@ struct MacroEditor: View {
                         TextEditor(text: $macro.value).font(.body.monospaced()).frame(minHeight: 90)
                     }
                 } else {
-                    TextField("App or link", text: $macro.value, prompt: Text("Spotify, https://…, or /path/to/file"))
+                    TextField("App or link", text: $macro.value, prompt: Text("Paste a link (YouTube, Spotify…) or an app name"))
                 }
             }
             Section("When") {
@@ -769,11 +776,11 @@ struct KeyboardTab: View {
                 StripNote()
             }
             Section("Safety") {
-                Text("The first time F99 Mood connects, it saves your keyboard's original settings. Restoring puts back only the lighting from that copy.")
+                Text("Puts back the lighting from before F99 Mood.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button("Restore original lighting…") { confirmRestore.value = true }
                     .disabled(!model.canWrite || !model.hasBackup || model.busy)
-                Text("If the keyboard ever acts strangely, hold Fn + Esc to factory-reset it.")
+                Text("Fn + Esc factory-resets the keyboard.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -910,8 +917,6 @@ struct MusicTab: View {
             Section {
                 MusicControls()
                 if model.musicOn && model.hearingNothing { NotHearingBanner() }
-                Text("Click a mood while the music plays to dance in that mood's colours and brightness. Picking a colour theme here switches back.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Style") {
                 ForEach(MusicStyle.allCases) { style in
@@ -944,23 +949,19 @@ struct MusicTab: View {
             Section("Keyboard colours") {
                 Toggle("Colour correction for LEDs", isOn: Binding(get: { model.settings.ledColorCorrection },
                                                                   set: { model.setColorCorrection($0) }))
-                Text("LEDs look brighter than a screen at the same setting, so dim colours wash out. This adjusts the colours sent to the keyboard so it matches the picture on screen. Turn it off if the keyboard looks too dark.")
+                Text("Matches the keyboard to the colours on screen.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Comfort") {
                 KeepLitControls()
                 Toggle("Reduced flashing", isOn: Binding(get: { model.settings.reducedFlashing },
                                                          set: { model.setReducedFlashing($0) }))
-                Text("Softer beats, no white flashes, and slower changes. Even with this off, F99 Mood never flashes the keyboard more than three times a second, and keeps brightness at 80% or less.")
+                Text("Softer beats and no white flashes.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Shortcut") {
                 HotkeyPicker(hotkey: $model.settings.musicHotkey)
                 Toggle("Start dancing when F99 Mood opens", isOn: $model.settings.musicAtLaunch)
-            }
-            Section {
-                Text("While music mode is on, the Mac sends colours to the keyboard about 20 times a second over the USB-C cable. When you stop it, pick a mood or quit the app, your previous lighting comes back.")
-                    .font(.callout).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -978,7 +979,7 @@ struct StripNote: View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle("Light strip matches my mood and theme colours", isOn: Binding(
                 get: { model.settings.stripFollowsColors }, set: { model.setStripFollowsColors($0) }))
-            Text("The strip changes colour when you pick a mood or a music theme. It can't flash with each beat: its colour is a saved setting, and saving it many times a second would wear out the keyboard's memory. Press Fn + Shift on the keyboard to change its style (static, blinking, …).")
+            Text("Fn + Shift changes the strip's style.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

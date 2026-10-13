@@ -231,13 +231,16 @@ enum Appearance: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Built-in typing sounds (made by the app, no recordings), or your own file.
+/// Built-in typing sounds, recorded from real keyboards (CC0; see
+/// Resources/Sounds/CREDITS.md), or your own file.
 enum KeySound: String, Codable, CaseIterable, Identifiable {
-    case thock = "Soft thock"
-    case click = "Crisp click"
-    case typewriter = "Typewriter"
-    case bubble = "Bubble"
+    case tactile = "Tactile"
+    case clicky = "Clicky"
+    case soft = "Soft"
     case custom = "My own sound file"
+
+    /// The folder in the app's Resources/Sounds holding this sound's takes.
+    var folder: String? { self == .custom ? nil : String(describing: self) }
     var id: String { rawValue }
 }
 
@@ -307,7 +310,7 @@ struct AppSettings: Codable {
     var appearance: Appearance = .system
     /// Typing sounds.
     var keySounds = false
-    var keySound: KeySound = .thock
+    var keySound: KeySound = .tactile
     var keySoundVolume = 0.5
     var keySoundFile: String? = nil
     /// Which set of built-in moods this file was last updated to.
@@ -362,7 +365,7 @@ struct AppSettings: Codable {
         nowPlayingColor = opt(.nowPlayingColor) ?? RGB(hex: 0xffffff)
         appearance = opt(.appearance) ?? .system
         keySounds = opt(.keySounds) ?? false
-        keySound = opt(.keySound) ?? .thock
+        keySound = opt(.keySound) ?? .tactile
         keySoundVolume = min(max(opt(.keySoundVolume) ?? 0.5, 0), 1)
         keySoundFile = opt(.keySoundFile)
         if let colors = try c.decodeIfPresent([RGB].self, forKey: .customColors), !colors.isEmpty {
@@ -389,13 +392,7 @@ struct AppSettings: Codable {
         mood("Gaming",         "🎮", 12, /* Reaction */      4, 2, 0, key: 5), // ⌃⌥G
         mood("Starry Night",   "✨", 8,  /* Stars twinkle */ 2, 1, 6, key: 20),
         mood("Ocean Waves",    "🌊", 13, /* Sine wave */     3, 1, 5, key: 21),
-        mood("Neon Night",     "💜", 11, /* Neon stream */   4, 2, 4, key: 23),
         mood("Rainbow Wheel",  "🌈", 6,  /* Rainbow wheel */ 4, 2, 7, key: 22),
-        mood("Retro Arcade",   "🕹️", 10, /* Retro snake */   4, 3, 1, key: 26),
-        mood("Storm",          "🌀", 18, /* Rotating storm */4, 3, 7, key: 25),
-        mood("Waterfall",      "💧", 16, /* Colorful waterfall */ 3, 2, 7),
-        mood("Scanner",        "📡", 14, /* Retinue scanning */   3, 2, 0),
-        mood("Sparkle Ripples","💫", 7,  /* Ripples shining */    3, 2, 7),
         mood("Lights out",     "🌙", 1,  /* Fixed on, off */      0, 0, 6, key: 29),
     ] + liveMoods
 
@@ -408,10 +405,6 @@ struct AppSettings: Codable {
         live("Matrix",         "🟩", .matrix,                  4, 2, 7),
         live("Campfire",       "🔥", .fire,                    4, 2, 7),
         live("Aurora",         "🌌", .aurora,                  3, 1, 7),
-        live("Comet",          "☄️", .comet,                   4, 2, 7),
-        live("Lava Lamp",      "🫠", .lavaLamp,                3, 1, 7),
-        live("Heartbeat",      "❤️", .heartbeat,               3, 1, 7),
-        live("Typing Ripples", "💦", .typingRipples,           4, 2, 7),
         live("Typing Heatmap", "🌡️", .typingHeatmap,           4, 2, 7),
         wasd,
     ]
@@ -430,6 +423,11 @@ struct AppSettings: Codable {
         ("Rainy Day", 5, nil), ("Blossom", 17, nil), ("Windmill", 15, nil), ("Typing Glow", 12, nil),
         ("Starlight", 1, .starlight), ("Visor", 1, .visor), ("Plasma", 1, .plasma),
         ("Galaxy", 1, .galaxy), ("Spiral", 1, .spiral), ("Candlelight", 1, .candle),
+        // Version 8: one mood per kind of movement, so each grid fits in two rows.
+        ("Neon Night", 11, nil), ("Retro Arcade", 10, nil), ("Scanner", 14, nil),
+        ("Storm", 18, nil), ("Waterfall", 16, nil), ("Sparkle Ripples", 7, nil),
+        ("Comet", 1, .comet), ("Lava Lamp", 1, .lavaLamp), ("Heartbeat", 1, .heartbeat),
+        ("Typing Ripples", 1, .typingRipples),
     ]
 
     /// A painted example: WASD and the arrows bright on a dim violet board.
@@ -458,8 +456,8 @@ struct AppSettings: Codable {
     ]
     /// 2: the effect-based set. 3: Gaming is back. 4: live effects.
     /// 5: Neon Cascade. 6: WASD (painted keys). 7: Electric Ripples, and
-    /// look-alike moods retired.
-    static let moodsVersion = 7
+    /// look-alike moods retired. 8: more look-alikes retired.
+    static let moodsVersion = 8
 
     /// What a new user starts with: the built-in moods, no macros, and the
     /// keyboard left on its own lighting until they pick a mood. Your own
@@ -479,7 +477,7 @@ struct AppSettings: Codable {
             Self.firstMoods.contains { $0.0 == m.name && $0.1 == m.lighting }
                 && !Self.builtInMoods.contains { $0.name == m.name }
         }
-        if moodsVersion < 7 {
+        if moodsVersion < 8 {
             for r in Self.retiredMoods {
                 for m in moods where m.name == r.name && m.lighting.effect == r.effect && m.live == r.live
                     && m.id != startupMoodID && !schedule.contains(where: { $0.moodID == m.id }) {

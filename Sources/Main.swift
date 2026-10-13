@@ -39,9 +39,9 @@ struct F99MoodApp: App {
         // The main window opens at launch. Closing it leaves the app running
         // in the menu bar; click the Dock icon or the menu bar icon to get it back.
         Window("F99 Mood", id: "main") {
-            MainView().environmentObject(model)
+            EditorView().environmentObject(model)
         }
-        .defaultSize(width: 760, height: 820)
+        .defaultSize(width: 980, height: 820)
 
         MenuBarExtra {
             MenuView().environmentObject(model)
@@ -49,11 +49,6 @@ struct F99MoodApp: App {
             Image(systemName: "keyboard")
         }
         .menuBarExtraStyle(.window)
-
-        Window("F99 Mood Settings", id: "editor") {
-            EditorView().environmentObject(model)
-        }
-        .defaultSize(width: 920, height: 620)
     }
 }
 

@@ -23,6 +23,10 @@ enum LiveEffect: String, Codable, CaseIterable, Identifiable {
     case ripples = "Ripples"
     var id: String { rawValue }
 
+    /// The live effects the mood editor offers. The others move like one of
+    /// these or like a keyboard effect; they still work in saved moods.
+    static let offered: [LiveEffect] = [.cascade, .aurora, .matrix, .fire, .ripples, .typingHeatmap, .painted]
+
     /// Where the idea comes from.
     var inspiredBy: String {
         switch self {

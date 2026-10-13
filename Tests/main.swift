@@ -220,8 +220,8 @@ check(abs(last.bpm - 120) < 6, "tempo locks to 120 BPM: \(last.bpm)")
 let calmMood = AppSettings.defaults.moods.first { $0.name == "Ocean Waves" }!   // cyan sine wave
 let calmPalette = MusicPalette.forMood(calmMood)
 check(calmPalette.colors.allSatisfy { $0.r < 0.75 && $0.b > 0.3 && $0.b >= $0.r }, "Calm dances in cyan shades: \(calmPalette.colors)")
-let partyMood = AppSettings.defaults.moods.first { $0.name == "Waterfall" }!  // picks its own colours
-check(MusicPalette.forMood(partyMood).colors.count == 6, "Waterfall dances in rainbow")
+let partyMood = AppSettings.defaults.moods.first { $0.name == "Rainbow Wheel" }!  // colourful
+check(MusicPalette.forMood(partyMood).colors.count == 6, "Rainbow Wheel dances in rainbow")
 
 // A dim mood dims the music.
 let dim = MusicRenderer(), full = MusicRenderer()
@@ -246,14 +246,17 @@ check(MusicPalette.electric.stripColor == 2, "Electric strip is blue")
 check(MusicPalette.presets.first { $0.name == "Fire" }!.stripColor == 0, "Fire strip is red")
 check(F99.nearestColor(RGB(0, 0.9, 0.95)) == 5, "cyan-ish is cyan")
 
-// New built-in moods: every effect is real, values in range, no two share a
-// shortcut, and they use many of the keyboard's effects.
+// Built-in moods: every effect is real, values in range, no two share a
+// shortcut, and each uses an effect the editor offers.
 let built = AppSettings.builtInMoods
 check(built.allSatisfy { F99.effect($0.lighting.effect) != nil && F99.brightnessLevels.contains($0.lighting.brightness)
     && F99.speedLevels.contains($0.lighting.speed) && (0...F99.colorful).contains($0.lighting.color) }, "moods valid")
 let keys = built.compactMap(\.hotkey)
 check(Set(keys).count == keys.count, "mood shortcuts unique")
-check(Set(built.map(\.lighting.effect)).count >= 13, "moods use many effects")
+check(built.allSatisfy { $0.live.map(LiveEffect.offered.contains) ?? F99.offeredEffects.contains($0.lighting.effect) },
+      "moods use offered effects")
+// Each grid fits in two rows of four, counting the "New mood" tile.
+check(built.filter { $0.live == nil }.count <= 7 && built.filter { $0.live != nil }.count <= 7, "short mood grids")
 
 // Upgrading saved moods: unedited old ones go, edited and custom ones stay,
 // new ones arrive, and nothing ends up with a clashing shortcut.
@@ -267,9 +270,9 @@ var old = AppSettings(moods: [
 old.upgradeMoods()
 let names = old.moods.map(\.name)
 check(!names.contains("Calm") && names.contains("Cozy") && names.contains("Mine"), "upgrade keeps your moods: \(names)")
-check(names.contains("Scanner") && names.firstIndex(of: "Scanner")! < names.firstIndex(of: "Lights out")!,
+check(names.contains("Ocean Waves") && names.firstIndex(of: "Ocean Waves")! < names.firstIndex(of: "Lights out")!,
       "upgrade adds new keyboard moods before Lights out")
-check(names.contains("Matrix") && names.contains("Typing Ripples"), "upgrade adds live moods")
+check(names.contains("Matrix") && names.contains("Typing Heatmap"), "upgrade adds live moods")
 let upgradedKeys = old.moods.compactMap(\.hotkey)
 check(Set(upgradedKeys).count == upgradedKeys.count, "no clashing shortcuts after upgrade")
 check(names.filter { $0 == "Focus" }.count == 1, "no duplicates")
@@ -455,11 +458,11 @@ check(ScheduleEntry(hour: 9, minute: 0, days: Set(2...6), moodID: nil).daysText 
 let plain = try! JSONDecoder().decode(AppSettings.self, from: #"{"moods":[]}"#.data(using: .utf8)!)
 check(plain.schedule.isEmpty && !plain.calendarAlerts && !plain.nowPlayingBar && !plain.keySounds, "extras off by default")
 var extras = AppSettings.defaults
-extras.schedule = plan; extras.keySounds = true; extras.keySound = .typewriter; extras.alertFlashes = 4
+extras.schedule = plan; extras.keySounds = true; extras.keySound = .clicky; extras.alertFlashes = 4
 let extrasBack = try! JSONDecoder().decode(AppSettings.self, from: Storage.encode(extras))
-check(extrasBack.schedule == plan && extrasBack.keySound == .typewriter && extrasBack.alertFlashes == 4, "extras fullTurn-trip")
+check(extrasBack.schedule == plan && extrasBack.keySound == .clicky && extrasBack.alertFlashes == 4, "extras fullTurn-trip")
 let wild = try! JSONDecoder().decode(AppSettings.self, from: #"{"moods":[],"alertFlashes":99,"keySound":"Kazoo","keySoundVolume":7}"#.data(using: .utf8)!)
-check(wild.alertFlashes == 6 && wild.keySound == .thock && wild.keySoundVolume == 1, "odd values clamped or defaulted")
+check(wild.alertFlashes == 6 && wild.keySound == .tactile && wild.keySoundVolume == 1, "odd values clamped or defaulted")
 
 // Painted moods: the built-in WASD paints W and keeps its colours through
 // a save; the renderer shows painted keys and the base colour.
@@ -474,7 +477,7 @@ let pFrame = painter.render()
 let qKey = F99.keys.first { $0.name == "Q" }!.led
 check(pFrame[wLED * 3 + 2] > 150 && pFrame[wLED * 3] < 10, "painted key is blue")
 check(pFrame[qKey * 3] == 0 && pFrame[qKey * 3 + 2] == 0, "unpainted key is off")
-check(AppSettings.moodsVersion == 7, "moods version bumped")
+check(AppSettings.moodsVersion == 8, "moods version bumped")
 var oldUser = AppSettings.defaults
 oldUser.moods.removeAll { $0.name == "WASD" }; oldUser.moodsVersion = 5
 oldUser.upgradeMoods()
@@ -520,5 +523,20 @@ check(!v6names.contains("Galaxy") && v6.macros[0].moodID == nil, "Galaxy retired
 check(v6names.contains("Blossom") && v6names.contains("Candlelight"), "edited and start-up moods kept")
 check(v6.moods.first { $0.name == "Electric Ripples" }?.paletteName == "Electric", "Electric Ripples added in Electric")
 check(!AppSettings.defaults.moods.contains { m in AppSettings.retiredMoods.contains { $0.name == m.name } }, "new users don't get retired moods")
+
+// Version 8 retires more look-alikes from an unedited version 7 list, but
+// keeps one you edited and your start-up mood.
+var v7 = AppSettings.defaults
+v7.moodsVersion = 7
+let scanner = AppSettings.mood("Scanner", "", 14, 3, 2, 0)
+let myStorm = AppSettings.mood("Storm", "", 2, 4, 3, 7) // effect changed: yours now
+var comet = AppSettings.mood("Comet", "", 1, 4, 2, 7); comet.live = .comet
+v7.moods += [scanner, myStorm, comet]
+v7.startupMoodID = comet.id
+v7.activeMoodID = scanner.id
+v7.upgradeMoods()
+let v7names = v7.moods.map(\.name)
+check(!v7names.contains("Scanner") && v7.activeMoodID == nil, "Scanner retired, active mood cleared")
+check(v7names.contains("Storm") && v7names.contains("Comet"), "edited and start-up moods kept in v8")
 
 if failures == 0 { print("All tests passed.") } else { print("\(failures) test(s) failed."); exit(1) }

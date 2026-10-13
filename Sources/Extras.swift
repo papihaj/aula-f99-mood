@@ -160,16 +160,14 @@ final class CalendarWatcher {
 
 // MARK: Typing sounds
 
-/// Plays a short sound for each key press. The built-in sounds are made
-/// here from sine waves and noise, so there are no recordings to license;
-/// you can also pick your own sound file.
+/// Plays a short sound for each key press: a random take from a set of
+/// recorded keystrokes, or your own sound file.
 @MainActor
 final class KeySoundPlayer {
     private let engine = AVAudioEngine()
     private var voices: [AVAudioPlayerNode] = []
     private var next = 0
     private var normal: [AVAudioPCMBuffer] = []
-    private var big: [AVAudioPCMBuffer] = []
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
     private(set) var loadedSound: KeySound?
     private(set) var loadedFile: String?
@@ -196,19 +194,19 @@ final class KeySoundPlayer {
             guard let file else { throw CocoaError(.fileNoSuchFile) }
             let buffer = try Self.read(URL(fileURLWithPath: file), into: format)
             normal = [buffer]
-            big = [buffer]
         } else {
-            normal = [0.94, 0.98, 1.02, 1.06].enumerated().map { i, p in synth(sound, pitch: p, big: false, seed: i) }
-            big = [0.97, 1.03].enumerated().map { i, p in synth(sound, pitch: p, big: true, seed: i + 10) }
+            guard let folder = sound.folder,
+                  let urls = Bundle.main.urls(forResourcesWithExtension: "wav", subdirectory: "Sounds/\(folder)"),
+                  !urls.isEmpty else { throw CocoaError(.fileNoSuchFile) }
+            normal = try urls.map { try Self.read($0, into: format) }
         }
         loadedSound = sound
         loadedFile = file
     }
 
-    /// `keyCode` picks a deeper sound for Space, Return and Delete.
+    /// `keyCode` is the key pressed; every key gets a random take.
     func play(keyCode: UInt16) {
-        let isBig = [49, 36, 51, 76].contains(keyCode)
-        let pool = isBig ? big : normal
+        let pool = normal
         guard !pool.isEmpty else { return }
         if !engine.isRunning {
             engine.mainMixerNode.outputVolume = Float(volume)
@@ -246,73 +244,5 @@ final class KeySoundPlayer {
         }
         if let error { throw error }
         return out
-    }
-
-    private func synth(_ sound: KeySound, pitch p: Double, big: Bool, seed: Int) -> AVAudioPCMBuffer {
-        let rate = format.sampleRate
-        let length: Double = switch sound {
-        case .thock: big ? 0.11 : 0.07
-        case .click: big ? 0.06 : 0.04
-        case .typewriter: big ? 0.8 : 0.12
-        case .bubble: big ? 0.12 : 0.08
-        case .custom: 0.05
-        }
-        let n = Int(length * rate)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(n))!
-        buffer.frameLength = AVAudioFrameCount(n)
-        let out = buffer.floatChannelData![0]
-        var rng = UInt64(0x9e3779b97f4a7c15) &+ UInt64(seed) &* 0x2545f4914f6cdd1d
-        func noise() -> Double {
-            rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17
-            return Double(rng % 20_000) / 10_000 - 1
-        }
-        let low = big ? 0.75 : 1.0
-        var lp = 0.0, prev = 0.0, phase = 0.0
-        var peak = 0.0
-        var samples = [Double](repeating: 0, count: n)
-        for i in 0..<n {
-            let t = Double(i) / rate
-            var s = 0.0
-            switch sound {
-            case .thock:
-                let r = noise()
-                lp += (r - lp) * 0.12
-                s = 0.6 * sin(2 * .pi * 150 * p * low * t) * exp(-t / 0.012)
-                    + 0.5 * lp * exp(-t / 0.005)
-                    + 0.2 * sin(2 * .pi * 420 * p * low * t) * exp(-t / 0.008)
-            case .click:
-                let r = noise()
-                let hp = r - prev
-                prev = r
-                s = 0.6 * hp * exp(-t / 0.0025) + 0.3 * sin(2 * .pi * 3200 * p * t) * exp(-t / 0.003)
-                // The key coming back up, a moment later.
-                let u = t - 0.018
-                if u > 0 { s += 0.25 * hp * exp(-u / 0.002) }
-            case .typewriter:
-                let r = noise()
-                s = 0.7 * r * exp(-t / 0.002)
-                    + 0.25 * (sin(2 * .pi * 1800 * p * t) + 0.5 * sin(2 * .pi * 2950 * p * t)) * exp(-t / 0.03)
-                    + 0.4 * sin(2 * .pi * 220 * p * low * t) * exp(-t / 0.01)
-                if big { // the bell at the end of the line
-                    let u = max(0, t - 0.03)
-                    s += 0.35 * (sin(2 * .pi * 2093 * u) + 0.4 * sin(2 * .pi * 4186 * u)) * exp(-u / 0.25) * (t > 0.03 ? 1 : 0)
-                }
-            case .bubble:
-                let f = (500 + 600 * (t / length)) * p * low
-                phase += 2 * .pi * f / rate
-                s = sin(phase) * sin(.pi * t / length) * exp(-t / 0.04)
-            case .custom:
-                s = 0
-            }
-            samples[i] = s
-            peak = max(peak, abs(s))
-        }
-        let gain = peak > 0 ? 0.8 / peak : 0
-        for i in 0..<n {
-            // Short fade-out so the end never clicks.
-            let tail = min(1, Double(n - i) / (0.004 * rate))
-            out[i] = Float(samples[i] * gain * tail)
-        }
-        return buffer
     }
 }

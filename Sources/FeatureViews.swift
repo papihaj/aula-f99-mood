@@ -16,10 +16,12 @@ struct RemixBar: View {
         let changed = model.remixOriginals[mood.id] != nil
         let effect = F99.effect(mood.lighting.effect)
         let fixedEffect = mood.live == nil && effect?.hasColor == false
-        if mood.lighting.brightness > 0 {
+        // Nothing to remix when the effect picks its own colours or the
+        // keys are painted (paint them in the mood editor instead).
+        if mood.lighting.brightness > 0 && !fixedEffect && mood.live != .painted {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Text(compact ? "Remix" : "Remix \(mood.name)").font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Text("Remix").font(.subheadline.weight(.semibold))
                     Spacer(minLength: 4)
                     if changed {
                         Button { model.revertRemix(mood.id) } label: { Label("Revert", systemImage: "arrow.uturn.backward") }
@@ -28,19 +30,12 @@ struct RemixBar: View {
                             Button { model.saveRemix(mood.id) } label: { Label("Save as new mood", systemImage: "plus.square.on.square") }
                         }
                     }
-                    Button { model.shuffleColors(mood.id) } label: { Label("Shuffle", systemImage: "shuffle") }
-                        .disabled(fixedEffect)
-                        .help("Try random new colours")
                 }
                 .labelStyle(compact ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
                 .buttonStyle(.borderless)
                 .controlSize(.small)
 
-                if fixedEffect {
-                    Text("\(effect?.name ?? "This effect") picks its own colours.").font(.caption).foregroundStyle(.secondary)
-                } else if mood.live == .painted {
-                    Text("Shuffle turns all your painted colours round the colour wheel.").font(.caption).foregroundStyle(.secondary)
-                } else if mood.live != nil {
+                if mood.live != nil {
                     themeChips
                 } else {
                     colourDots
@@ -211,7 +206,7 @@ struct PaintEditor: View {
                 Spacer()
                 Text("\(mood.paint.count) key\(mood.paint.count == 1 ? "" : "s") painted").font(.caption).foregroundStyle(.secondary)
             }
-            Text("Click or drag over keys to paint them. Option-click a key to pick up its colour. Shows on the keyboard as you paint when this mood is on.")
+            Text("Click or drag to paint. Option-click picks up a colour.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -237,7 +232,7 @@ struct ScheduleTab: View {
         Form {
             Section {
                 if model.settings.schedule.isEmpty {
-                    Text("No times yet. Add one to switch moods by themselves, like Focus on weekday mornings and Campfire after 10 pm.")
+                    Text("No times yet.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach($model.settings.schedule) { $entry in
@@ -257,7 +252,6 @@ struct ScheduleTab: View {
                        let mood = model.settings.moods.first(where: { $0.id == now.moodID }) {
                         Text("Right now: \(mood.name), since \(Self.time(now)).")
                     }
-                    Text("When F99 Mood opens, it starts with the mood scheduled for that time instead of the start-up mood. You can still pick any mood yourself in between; the next time on the list switches again.")
                 }
                 .font(.caption).foregroundStyle(.secondary)
             }
@@ -378,7 +372,7 @@ struct AlertsTab: View {
             } header: {
                 Text("Calendar")
             } footer: {
-                Text("Uses the calendars in the Calendar app (iCloud, Google, Exchange…). Skips all-day events. F99 Mood only reads when events start; nothing is saved or sent. No flashes while the screen is locked.")
+                Text("Uses the Calendar app. Skips all-day events.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -397,7 +391,7 @@ struct AlertsTab: View {
             } header: {
                 Text("Mail")
             } footer: {
-                Text("Checks the number of unread messages in Mail's inbox every 30 seconds while Mail is open. Only the count is read, never the messages.")
+                Text("Checks Mail's unread count every 30 seconds.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -432,7 +426,7 @@ struct AlertsTab: View {
             } header: {
                 Text("Light strip")
             } footer: {
-                Text("The strip goes pink (or your colour) when an alert comes in and stays that way until the meeting starts, you open Mail, or you clear it in the main window. It changes colour once per alert; it can't blink, because its colour is saved in the keyboard's memory. Needs the USB-C cable.")
+                Text("The strip changes colour until the alert is over.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -461,7 +455,7 @@ struct AlertsTab: View {
             } header: {
                 Text("Now playing")
             } footer: {
-                Text("The six keys in a line beside the light strip (Home, Num Lock, 7, 4, 1 and →) fill from the bottom up as the song plays, in Spotify or Apple Music. It shows during live effects, painted moods and music mode, which the Mac draws; the keyboard's own effects can't show it. The strip itself can't be the bar: its colour is saved in the keyboard's memory, which would wear out if it changed every second.")
+                Text("The keys beside the strip fill up as the song plays.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -504,7 +498,7 @@ struct SoundsTab: View {
             } header: {
                 Text("Typing sounds")
             } footer: {
-                Text("Space, Return and Delete get a deeper sound, and each key varies a little, like a real board. The built-in sounds are made by the app; your own file can be any short .wav, .aiff, .m4a or .mp3 (the first second is used). Needs Accessibility permission to hear key presses in other apps; only that a key was pressed is used, never which letters.")
+                Text("Needs Accessibility permission.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

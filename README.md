@@ -113,20 +113,14 @@ through.
 |---|---|---|
 | 🎯 Focus | Fixed on, soft white | ⌃⌥1 |
 | 🎮 Gaming | Reaction (keys light as you press them), red | ⌃⌥G |
-| 🌧️ Rainy Day | Raindrops, blue | ⌃⌥2 |
 | ✨ Starry Night | Stars twinkle, white | ⌃⌥3 |
 | 🌊 Ocean Waves | Sine wave, cyan | ⌃⌥4 |
-| 💜 Neon Night | Neon stream, magenta | ⌃⌥5 |
 | 🌈 Rainbow Wheel | Rainbow wheel | ⌃⌥6 |
-| 🕹️ Retro Arcade | Retro snake, green | ⌃⌥7 |
-| 🌸 Blossom | Blossoming | ⌃⌥8 |
-| 🌀 Storm | Rotating storm | ⌃⌥9 |
-| 💧 Waterfall | Colorful waterfall | |
-| 🎡 Windmill | Rotating windmill | |
-| 📡 Scanner | Retinue scanning, red | |
-| 💫 Sparkle Ripples | Ripples shining | |
-| ⌨️ Typing Glow | Reaction (keys light as you type), cyan | |
 | 🌙 Lights out | Lights off | ⌃⌥0 |
+
+There's one mood for each kind of movement, so the list stays short. The
+keyboard's other effects look like one of these, but you can still reach them
+on the keyboard with **Fn + \\**.
 
 ### Live effects
 
@@ -138,20 +132,12 @@ open. In the mood list they have a pink **LIVE** badge.
 | Mood | Live effect | Inspired by |
 |---|---|---|
 | 🌠 Neon Cascade ★ | Electric and Neon colours flowing across every key, always bright; pressed keys flash near-white with a halo | Razer "Wave", Corsair "Rainbow Wave" |
+| ⚡️ Electric Ripples | Soft rings of dark blue and violet spreading across the keys | Razer "Ripple" |
 | 🟩 Matrix | Green code raining down | QMK "Digital Rain", Razer Chroma |
 | 🔥 Campfire | Flames rising from the bottom row | Razer Chroma "Fire", HyperX |
 | 🌌 Aurora | Slow curtains of colour | HyperX "Aurora", Wooting |
-| ⭐️ Starlight | Keys softly twinkle | Razer Chroma "Starlight" |
-| ☄️ Comet | Bright heads with long tails along each row | ASUS Aura "Comet" |
-| 🚨 Visor | A band sweeping back and forth | Corsair iCUE "Visor" |
-| 🫠 Lava Lamp | Slow blobs merging and splitting | SignalRGB |
-| 🔮 Plasma | Flowing demoscene plasma | OpenRGB, SignalRGB |
-| ❤️ Heartbeat | A soft lub-dub pulse from the centre | Logitech-style pulse |
-| 🪐 Galaxy | A turning spiral with twinkling stars | SignalRGB |
-| 🍥 Spiral | A turning rainbow spiral | Corsair "Spiral Rainbow", QMK |
-| 🕯️ Candlelight | Warm, gentle flicker | Philips Hue candle scenes |
-| 💦 Typing Ripples | Rings spread from each key you press | Razer "Ripple", Corsair, QMK "Splash" |
 | 🌡️ Typing Heatmap | Keys you use most glow hotter | QMK "Typing Heatmap" |
+| 🎮 WASD | Your own painted keys: WASD and the arrows bright on dim violet | Razer Synapse, Wooting, VIA |
 
 **Start-up mood** (★): pick one on the welcome screen, under **General**, or with
 **Start-up mood** in a mood's settings, and F99 Mood switches to it whenever it
@@ -612,6 +598,10 @@ detected as beats.
   (MIT) and [keylux](https://github.com/SibteProf/keylux) (MIT / Apache-2.0).
 - Effect names, key positions and value ranges come from AULA's own F99
   configuration file.
+- Typing sounds: real keystroke recordings, all CC0, by
+  [StavSounds](https://freesound.org/people/StavSounds/packs/42151/) (Tactile,
+  Clicky) and [unicaegames](https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes)
+  (Soft). See `Resources/Sounds/CREDITS.md`.
 
 AULA and EPOMAKER are trademarks of their owners. This project is not
 affiliated with or endorsed by either company. Use it at your own risk, on
