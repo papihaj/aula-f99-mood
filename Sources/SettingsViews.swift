@@ -62,10 +62,11 @@ struct SettingsTab: View {
             }
         }
         .formStyle(.grouped)
-        .confirmationDialog("Reset F99 Mood to how it was when first installed?", isPresented: $confirmReset.value) {
+        .alert("Reset F99 Mood to how it was when first installed?", isPresented: $confirmReset.value) {
+            Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) { model.resetAllSettings() }
         } message: {
-            Text("Moods, macros and options go back to the defaults.")
+            Text("All the built-in moods come back, including any you deleted. Moods you made, macros and options are removed.")
         }
         .confirmationDialog("Restore the lighting your keyboard had before F99 Mood?", isPresented: $confirmRestore.value) {
             Button("Restore") { model.restoreOriginal() }

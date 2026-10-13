@@ -174,6 +174,22 @@ for i in 0..<30 {
 check(lit(sf, "Num0") > lit(sf, "LCtrl"), "scroll: a new sound enters on the right")
 check(MusicStyle.offered.count <= 7, "short music style list")
 
+// Deleting every mood, then resetting, brings all the built-in moods back.
+var wiped = AppSettings.defaults
+for mood in wiped.moods { wiped.deleteMood(mood.id) }
+check(wiped.moods.isEmpty && wiped.activeMoodID == nil, "every mood can be deleted")
+let reset = AppSettings.defaults
+check(reset.moods.map(\.name) == AppSettings.builtInMoods.map(\.name), "reset brings the built-in moods back")
+check(reset.moods.filter { $0.live == nil }.count == 6 && reset.moods.filter { $0.live != nil }.count == 7,
+      "reset fills both mood grids")
+// "Restore built-in moods" puts back only what's missing, keeping your own.
+var partial = AppSettings.defaults
+let mine = Mood(name: "My mood", emoji: "", lighting: .init(effect: 1, brightness: 3, speed: 2, color: 6), hotkey: nil)
+partial.moods.append(mine)
+for mood in partial.moods where mood.name != "My mood" { partial.deleteMood(mood.id) }
+check(partial.addMissingBuiltInMoods() == AppSettings.builtInMoods.count && partial.moods.contains { $0.id == mine.id },
+      "restore puts every built-in mood back and keeps yours")
+
 // Palettes: ends land on the first and last colours, wrapping loops back.
 let fire = MusicPalette.presets.first { $0.name == "Fire" }!
 check(fire.sample(0, wrap: false) == fire.colors.first!, "palette start")

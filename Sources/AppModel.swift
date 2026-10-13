@@ -1058,6 +1058,10 @@ final class AppModel: ObservableObject {
     func resetAllSettings() {
         if musicOn { stopMusic() }
         if liveMood != nil { stopLive() }
+        // Forget anything that points at the old moods.
+        remixOriginals = [:]
+        appMoodID = nil
+        moodBeforeApp = nil
         var fresh = AppSettings.defaults
         fresh.welcomeDone = true
         settings = fresh
