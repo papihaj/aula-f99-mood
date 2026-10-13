@@ -74,15 +74,18 @@ enum MacroRunner {
 
     static func type(_ text: String) {
         guard canType else { askForAccessibility(); return }
+        // A password field has focus: never type macro text into it.
+        guard !IsSecureEventInputEnabled() else { NSSound.beep(); return }
         // Give the user a moment to let go of the shortcut's modifier keys,
         // otherwise ⌃/⌥ would still be held while the text goes in.
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
             let source = CGEventSource(stateID: .hidSystemState)
             for line in text.components(separatedBy: "\n").enumerated() {
                 if line.offset > 0 { press(36, source) } // Return
-                let units = Array(line.element.utf16)
-                for chunk in stride(from: 0, to: units.count, by: 16) {
-                    var slice = Array(units[chunk..<min(chunk + 16, units.count)])
+                // Chunks of whole characters, so an emoji is never split.
+                let characters = Array(line.element)
+                for chunk in stride(from: 0, to: characters.count, by: 8) {
+                    var slice = Array(String(characters[chunk..<min(chunk + 8, characters.count)]).utf16)
                     for down in [true, false] {
                         let e = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down)
                         e?.flags = []

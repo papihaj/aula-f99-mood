@@ -1,5 +1,7 @@
 import AppKit
+import AVFoundation
 import IOKit.hid
+import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -12,19 +14,25 @@ final class AppModel: ObservableObject {
     }
 
     @Published var settings: AppSettings {
-        didSet {
-            Storage.save(settings)
-            registerHotkeys()
-        }
+        didSet { settingsChanged(from: oldValue) }
     }
+    /// Typing effects are on but macOS hasn't allowed Accessibility yet.
+    @Published private(set) var needsAccessibility = false
+    /// The screen is locked or asleep, so the lights are off.
+    @Published private(set) var darkened = false
+    /// No typing or mouse for a while, so live effects and music are dimmed.
+    @Published private(set) var idleDimmed = false
     @Published private(set) var status: Status = .searching
     @Published private(set) var busy = false
     @Published private(set) var musicOn = false
     /// The colours music mode is painting right now (R, G, B per LED slot),
     /// for the on-screen keyboard. Nil when music is off.
-    @Published private(set) var streamFrame: [UInt8]?
-    @Published private(set) var musicLevel: Float = 0
-    @Published private(set) var musicBPM: Float = 0
+    /// Not @Published on purpose: it changes 20 times a second, and
+    /// publishing it would redraw every view in the app each time. The
+    /// on-screen keyboard redraws by itself and reads it then.
+    private(set) var streamFrame: [UInt8]?
+    /// The music level and tempo, watched only by the meter.
+    let meter = MusicMeter()
     /// True when the app has heard nothing at all for a while: either nothing
     /// is playing, or macOS hasn't allowed audio recording.
     @Published private(set) var hearingNothing = false
@@ -84,20 +92,47 @@ final class AppModel: ObservableObject {
         connect()
         // Without a keyboard, still show the start-up mood on screen.
         if !wasPresent { DispatchQueue.main.async { [weak self] in self?.applyStartupMood() } }
-        // Notice the cable being plugged in or pulled out. This only checks
-        // whether the USB device exists; it sends nothing to the keyboard.
-        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.applyDockSetting()
+            // With the keyboard plugged in, start once it has connected.
+            if self.settings.musicAtLaunch {
+                if self.wasPresent { self.resumeMusicAfterConnect = true } else { self.startMusic() }
+            }
         }
+        // Once a second: idle dimming and the Accessibility check. Every third
+        // tick, notice the cable being plugged in or pulled out (this only
+        // checks whether the USB device exists; it sends nothing).
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+        watchSystem()
         // Put the lighting back if the app quits mid-song.
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
                                                object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.stopMusicBeforeQuit() }
+            MainActor.assumeIsolated {
+                self?.saveNow()
+                self?.stopMusicBeforeQuit()
+            }
         }
     }
 
     var activeMood: Mood? { settings.moods.first { $0.id == settings.activeMoodID } }
     var canWrite: Bool { if case .connected = status { return true } else { return false } }
+
+    private var ticks = 0
+
+    private func tick() {
+        ticks += 1
+        let visible = NSApp?.windows.contains { $0.isVisible && $0.occlusionState.contains(.visible) } ?? true
+        queue.async { [weak self] in self?.windowVisible = visible }
+        if ticks % 3 == 0 { poll() }
+        checkIdle()
+        if needsAccessibility, AXIsProcessTrusted() {
+            needsAccessibility = false
+            updateKeyMonitor() // the old monitors were added before access
+        }
+    }
 
     private func poll() {
         let present = Keyboard.isPresent
@@ -113,6 +148,7 @@ final class AppModel: ObservableObject {
 
     private func disconnect(reason: String) {
         if musicOn { stopMusic() }
+        // Remember a running live mood so it carries on once replugged.
         if liveMood != nil { stopLive() }
         queue.async { [weak self] in self?.keyboard = nil }
         page = nil
@@ -140,7 +176,14 @@ final class AppModel: ObservableObject {
                     if let name = kb.modelName {
                         Storage.saveBackupIfMissing(page)
                         self.status = .connected(name)
+                        // Left in per-key mode by a session that never ended
+                        // (unplugged, crash): put the lighting back first.
+                        if page.isStreamMode && !self.musicOn && self.liveMood == nil { self.recoverFromStreamMode() }
                         self.resumeAfterConnect()
+                        if self.resumeMusicAfterConnect {
+                            self.resumeMusicAfterConnect = false
+                            self.startMusic()
+                        }
                     } else {
                         self.status = .readOnly(KeyboardError.unknownModel(kb.identityHex).localizedDescription)
                     }
@@ -213,6 +256,22 @@ final class AppModel: ObservableObject {
     }
 
     private var startedUp = false
+    private var lastAutoReconnect = Date.distantPast
+    /// Music was on when the Mac went to sleep.
+    private var resumeMusicAfterConnect = false
+
+    /// The keyboard is in per-key mode with nothing streaming: restore the
+    /// lighting saved before the stream, else the original lighting, else a
+    /// plain white.
+    private func recoverFromStreamMode() {
+        let saved = [Storage.loadStreamBackup(), Storage.loadBackup()].compactMap { $0 }.first { !$0.isStreamMode }
+        perform { kb in
+            let page = if let saved { try kb.restoreLighting(from: saved) }
+                       else { try kb.apply(.init(effect: 1, brightness: 3, speed: 0, color: 6)) }
+            Storage.clearStreamBackup()
+            return page
+        }
+    }
 
     /// Switch to the start-up mood, unless music is playing. Runs once per
     /// launch: when the keyboard first connects, or at launch for the
@@ -240,15 +299,24 @@ final class AppModel: ObservableObject {
 
     func setKeepKeysLit(_ on: Bool) {
         settings.keepKeysLit = on
-        let floor = on ? Self.keysLitFloor : 0
+        pushFloor()
+    }
+
+    func setKeysLitLevel(_ level: Double) {
+        settings.keysLitLevel = min(max(level, 0.2), 0.8)
+        pushFloor()
+    }
+
+    private func pushFloor() {
+        let floor = keysLitFloor
         queue.async { [weak self] in
             self?.liveRenderer.minimumBrightness = floor
             self?.renderer.minimumBrightness = floor
         }
     }
 
-    /// About half brightness: readable letters, room left for effects.
-    static let keysLitFloor = 0.5
+    /// About half brightness by default: readable letters, room for effects.
+    private var keysLitFloor: Double { settings.keepKeysLit ? settings.keysLitLevel : 0 }
 
     /// The strip colour for a mood: its colour, if it has one of the fixed
     /// colours. Colourful moods leave the strip as it is.
@@ -347,26 +415,31 @@ final class AppModel: ObservableObject {
     func startMusic() {
         guard !musicOn else { return }
         if liveMood != nil { stopLive() }
-        let toKeyboard = canWrite
-        lastError = nil
-        let source: AudioSource = settings.musicInput == .system ? SystemAudioSource() : MicrophoneSource()
-        do {
-            try source.start(into: samples)
-        } catch {
-            source.stop()
-            lastError = error.localizedDescription
+        // The first time, ask for the microphone and start once it's allowed.
+        if settings.musicInput == .microphone, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted { self?.startMusic() } else { self?.lastError = AudioError.microphoneDenied.localizedDescription }
+                }
+            }
             return
         }
+        let toKeyboard = canWrite
+        lastError = nil
+        guard let source = startAudioSource() else { return }
         audio = source
         musicOn = true
         let style = settings.musicStyle
         let palette = settings.musicPalette
         let reduced = settings.reducedFlashing
-        let floor = settings.keepKeysLit ? Self.keysLitFloor : 0
+        let floor = keysLitFloor
         let correction = settings.ledColorCorrection
         let strip = settings.stripFollowsColors ? palette.stripColor : nil
         musicMood = nil
         hearingNothing = false
+        streamSession += 1
+        let session = streamSession
+        let dim = currentDimLevel
 
         pending += 1
         queue.async { [weak self] in
@@ -374,10 +447,11 @@ final class AppModel: ObservableObject {
             let result = Result { () -> ConfigPage? in
                 guard toKeyboard else { return nil }
                 guard let kb = self.keyboard else { throw KeyboardError.notFound }
-                return try kb.enterStreamMode(stripColor: strip)
+                return try self.beginStream(kb, strip: strip)
             }
             if case .success(let before) = result {
                 self.pageBeforeMusic = before
+                self.dimLevel = dim; self.dimTarget = dim
                 self.renderer.style = style
                 self.renderer.palette = palette
                 self.renderer.reducedFlashing = reduced
@@ -390,7 +464,11 @@ final class AppModel: ObservableObject {
             DispatchQueue.main.async {
                 self.pending -= 1
                 switch result {
-                case .success: self.startFrameTimer()
+                case .success:
+                    // Stopped while the keyboard was switching: the stop
+                    // already queued the restore; don't start the timers.
+                    guard session == self.streamSession, self.musicOn else { return }
+                    self.startFrameTimer()
                 case .failure(let error):
                     self.lastError = error.localizedDescription
                     self.stopAudio()
@@ -399,10 +477,67 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Bumped by every start and stop, so a start that finishes after it was
+    /// cancelled doesn't leave a timer running.
+    private var streamSession = 0
+
+    /// Switch the keyboard to per-key mode and remember the lighting from
+    /// before, on disk too. Runs on `queue`.
+    nonisolated private func beginStream(_ kb: Keyboard, strip: Int?) throws -> ConfigPage {
+        var before = try kb.enterStreamMode(stripColor: strip)
+        if before.isStreamMode {
+            // Already per-key (say, a live mood resuming after a replug):
+            // the lighting to go back to is the one saved earlier.
+            before = [Storage.loadStreamBackup(), Storage.loadBackup()].compactMap { $0 }.first { !$0.isStreamMode }
+                ?? before
+        } else {
+            Storage.saveStreamBackup(before)
+        }
+        return before
+    }
+
+    /// Put back the lighting from before the stream. Runs on `queue`. The
+    /// saved copy is only dropped once the keyboard has it back.
+    nonisolated private func endStream() throws -> ConfigPage? {
+        guard let kb = keyboard, let before = pageBeforeMusic else { return nil }
+        let page = try kb.restoreLighting(from: before)
+        pageBeforeMusic = nil
+        Storage.clearStreamBackup()
+        return page
+    }
+
+    /// Start listening; nil (with the error shown) if it couldn't.
+    private func startAudioSource() -> AudioSource? {
+        let source: AudioSource = settings.musicInput == .system ? SystemAudioSource() : MicrophoneSource()
+        do {
+            try source.start(into: samples)
+        } catch {
+            source.stop()
+            lastError = error.localizedDescription
+            return nil
+        }
+        // The sound moved to another device (AirPods, a display): listen there.
+        source.onDeviceChange = { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.musicOn else { return }
+                self.audio?.stop()
+                self.audio = nil
+                // Core Audio needs a moment to finish switching.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    guard self.musicOn, self.audio == nil else { return }
+                    if let fresh = self.startAudioSource() { self.audio = fresh } else { self.stopMusic() }
+                }
+            }
+        }
+        return source
+    }
+
     /// About 20 frames a second. The keyboard's own software never goes
     /// faster than one frame per 46 ms, and faster writes make it drop keys.
     private func startFrameTimer() {
-        let isSystem = settings.musicInput == .system
+        // Exact silence means no permission for either source (macOS sends
+        // zeros rather than an error), or nothing playing.
+        let isSystem = true
         analysisQueue.sync {
             analyzer = MusicAnalyzer(hop: Float(Self.analysisHop))
             silentSeconds = 0
@@ -464,8 +599,7 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.musicOn else { return }
             self.streamFrame = frame
-            self.musicLevel = snapshot.level
-            self.musicBPM = snapshot.bpm
+            self.meter.update(level: snapshot.level, bpm: snapshot.bpm)
         }
         push(frame, failureMessage: "Lost the keyboard while playing music.")
     }
@@ -476,6 +610,12 @@ final class AppModel: ObservableObject {
         guard let kb = keyboard, pageBeforeMusic != nil else { return }
         // Skip frames that didn't change, but resend every 2 s in case the
         // keyboard repainted by itself.
+        // Ease towards the dim level, over about half a second.
+        if dimLevel != dimTarget {
+            dimLevel = dimTarget > dimLevel ? min(dimTarget, dimLevel + 0.1) : max(dimTarget, dimLevel - 0.1)
+        }
+        var frame = frame
+        if dimLevel < 1 { frame = frame.map { UInt8(Double($0) * dimLevel) } }
         let now = Date()
         guard frame != lastFrame || now.timeIntervalSince(lastSent) > 2 else { return }
         do {
@@ -487,9 +627,17 @@ final class AppModel: ObservableObject {
             streamFailures += 1
             if streamFailures == 5 {
                 DispatchQueue.main.async { [weak self] in
-                    self?.lastError = failureMessage
-                    self?.stopMusic()
-                    self?.stopLive()
+                    guard let self else { return }
+                    self.stopMusic()
+                    self.stopLive()
+                    self.lastError = failureMessage
+                    // The USB handle may be stale (say, after sleep): a fresh
+                    // connection puts the lighting back and resumes live moods.
+                    // At most once a minute, so a faulty keyboard can't loop.
+                    if Keyboard.isPresent, Date().timeIntervalSince(self.lastAutoReconnect) > 60 {
+                        self.lastAutoReconnect = Date()
+                        self.connect()
+                    }
                 }
             }
         }
@@ -501,12 +649,11 @@ final class AppModel: ObservableObject {
         analysisTimer?.cancel()
         analysisTimer = nil
         hearingNothing = false
-        musicBPM = 0
+        meter.update(level: 0, bpm: 0)
         audio?.stop()
         audio = nil
         musicOn = false
         streamFrame = nil
-        musicLevel = 0
     }
 
     /// Stop the music lights and put back the lighting from before.
@@ -516,14 +663,11 @@ final class AppModel: ObservableObject {
         let moodAfter = musicMood
         musicMood = nil
         stopAudio()
+        streamSession += 1
         pending += 1
         queue.async { [weak self] in
             guard let self else { return }
-            let result = Result { () -> ConfigPage? in
-                guard let kb = self.keyboard, let before = self.pageBeforeMusic else { return nil }
-                return try kb.restoreLighting(from: before)
-            }
-            self.pageBeforeMusic = nil
+            let result = Result { try self.endStream() }
             DispatchQueue.main.async {
                 self.pending -= 1
                 switch result {
@@ -536,14 +680,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Always waits for the keyboard queue: a stop pressed just before
+    /// quitting may still have its restore queued.
     private func stopMusicBeforeQuit() {
-        guard musicOn || liveMood != nil else { return }
         stopAudio()
         liveTimer?.cancel()
+        liveTimer = nil
+        let dark = lightingBeforeDark
         queue.sync {
-            if let kb = keyboard, let before = pageBeforeMusic {
-                _ = try? kb.restoreLighting(from: before)
-            }
+            _ = try? endStream()
+            if let dark, let kb = keyboard { _ = try? kb.apply(dark) }
         }
     }
 
@@ -551,7 +697,39 @@ final class AppModel: ObservableObject {
 
     private func livePalette(_ mood: Mood) -> MusicPalette {
         guard let live = mood.live else { return settings.musicPalette }
+        if let name = mood.paletteName {
+            if name == MusicPalette.customName { return MusicPalette(name: name, colors: settings.customColors) }
+            if let preset = MusicPalette.presets.first(where: { $0.name == name }) { return preset }
+        }
         return (0..<F99.colorful).contains(mood.lighting.color) ? MusicPalette.forMood(mood) : live.palette
+    }
+
+    /// Whether pressed keys glow in this effect, from the setting.
+    private func glows(_ effect: LiveEffect) -> Bool {
+        switch settings.pressGlow {
+        case .off: return false
+        case .typingEffects: return effect.pressGlow
+        case .allLive: return !effect.drawsPresses
+        }
+    }
+
+    private func listensForKeys(_ effect: LiveEffect) -> Bool { effect.drawsPresses || glows(effect) }
+
+    /// Push the press-glow settings to the live renderer.
+    func updatePressGlow() {
+        guard let effect = liveMood?.live else { return }
+        let on = glows(effect)
+        let color: RGB? = switch settings.pressColor {
+        case .lightest: nil
+        case .white: RGB(1, 1, 1)
+        case .custom: settings.pressCustomColor
+        }
+        let halo = settings.pressHalo, fade = settings.pressFade
+        queue.async { [weak self] in
+            guard let r = self?.liveRenderer else { return }
+            r.pressGlow = on; r.pressColor = color; r.haloSize = halo; r.pressFade = fade
+        }
+        updateKeyMonitor()
     }
 
     /// Start (or switch to) a live effect mood. Without a keyboard it still
@@ -566,13 +744,24 @@ final class AppModel: ObservableObject {
         let palette = livePalette(mood)
         let scale = Double(mood.lighting.brightness) / 4
         let speed = mood.lighting.speed
-        let floor = settings.keepKeysLit ? Self.keysLitFloor : 0
+        let floor = keysLitFloor
+        let glow = glows(effect)
+        let pressColor: RGB? = switch settings.pressColor {
+        case .lightest: nil
+        case .white: RGB(1, 1, 1)
+        case .custom: settings.pressCustomColor
+        }
+        let halo = settings.pressHalo, fade = settings.pressFade
         let configure: (LiveRenderer) -> Void = { r in
             r.effect = effect
             r.palette = palette
             r.brightnessScale = scale
             r.speed = speed
             r.minimumBrightness = floor
+            r.pressGlow = glow
+            r.pressColor = pressColor
+            r.haloSize = halo
+            r.pressFade = fade
         }
 
         if liveMood != nil {
@@ -590,16 +779,20 @@ final class AppModel: ObservableObject {
         liveSessionToKeyboard = toKeyboard
         let strip = stripColor(for: mood)
         let correction = settings.ledColorCorrection
+        streamSession += 1
+        let session = streamSession
+        let dim = currentDimLevel
         pending += 1
         queue.async { [weak self] in
             guard let self else { return }
             let result = Result { () -> ConfigPage? in
                 guard toKeyboard else { return nil }
                 guard let kb = self.keyboard else { throw KeyboardError.notFound }
-                return try kb.enterStreamMode(stripColor: strip)
+                return try self.beginStream(kb, strip: strip)
             }
             if case .success(let before) = result {
                 self.pageBeforeMusic = before
+                self.dimLevel = dim; self.dimTarget = dim
                 configure(self.liveRenderer)
                 self.colorCorrection = correction
                 self.lastFrame = []
@@ -609,6 +802,7 @@ final class AppModel: ObservableObject {
                 self.pending -= 1
                 switch result {
                 case .success:
+                    guard session == self.streamSession, self.liveMood != nil else { return }
                     let t = DispatchSource.makeTimerSource(queue: self.queue)
                     t.schedule(deadline: .now(), repeating: .milliseconds(50), leeway: .milliseconds(5))
                     t.setEventHandler { [weak self] in self?.sendLiveFrame() }
@@ -616,6 +810,7 @@ final class AppModel: ObservableObject {
                     t.resume()
                     self.updateKeyMonitor()
                 case .failure(let error):
+                    guard session == self.streamSession else { return }
                     self.lastError = error.localizedDescription
                     self.liveMood = nil
                 }
@@ -624,7 +819,12 @@ final class AppModel: ObservableObject {
     }
 
     /// Runs on `queue`, 20 times a second.
+    /// Some F99 Mood window is on screen (updated once a second).
+    nonisolated(unsafe) private var windowVisible = true
+
     nonisolated private func sendLiveFrame() {
+        // Without a keyboard the frames are only for the on-screen picture.
+        guard pageBeforeMusic != nil || windowVisible else { return }
         let frame = liveRenderer.render()
         DispatchQueue.main.async { [weak self] in
             guard let self, self.liveMood != nil else { return }
@@ -641,14 +841,11 @@ final class AppModel: ObservableObject {
         liveMood = nil
         streamFrame = nil
         updateKeyMonitor()
+        streamSession += 1
         pending += 1
         queue.async { [weak self] in
             guard let self else { return }
-            let result = Result { () -> ConfigPage? in
-                guard let kb = self.keyboard, let before = self.pageBeforeMusic else { return nil }
-                return try kb.restoreLighting(from: before)
-            }
-            self.pageBeforeMusic = nil
+            let result = Result { try self.endStream() }
             DispatchQueue.main.async {
                 self.pending -= 1
                 switch result {
@@ -661,26 +858,280 @@ final class AppModel: ObservableObject {
 
     /// Typing effects listen for key presses: only which key, to light it,
     /// and only while a typing effect is on. Nothing is stored.
+    private var askedForAccessibility = false
+
     private func updateKeyMonitor() {
         keyMonitors.forEach { NSEvent.removeMonitor($0) }
         keyMonitors = []
-        guard let effect = liveMood?.live, effect.reactsToTyping else { return }
+        guard let effect = liveMood?.live, listensForKeys(effect) else {
+            needsAccessibility = false
+            return
+        }
         if !AXIsProcessTrusted() {
-            MacroRunner.askForAccessibility()
-            lastError = "Typing effects need Accessibility permission to see key presses in other apps: turn on F99 Mood under Privacy & Security → Accessibility."
+            needsAccessibility = true
+            // Ask once per launch; after that the banner explains it.
+            if !askedForAccessibility {
+                askedForAccessibility = true
+                MacroRunner.askForAccessibility()
+            }
         }
         let renderer = liveRenderer
         let queue = self.queue
         let handler: (NSEvent) -> Void = { event in
+            if event.type == .flagsChanged && !KeyMap.isPress(event) { return }
             guard let led = KeyMap.led(forKeyCode: event.keyCode) else { return }
             let now = Date()
             queue.async { renderer.keyPressed(led: led, at: now) }
         }
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: handler) {
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .flagsChanged], handler: handler) {
             keyMonitors.append(global)
         }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { handler($0); return $0 }) {
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged], handler: { handler($0); return $0 }) {
             keyMonitors.append(local)
+        }
+    }
+
+    // MARK: Settings changes
+
+    private var saveWork: DispatchWorkItem?
+    private var reapplyWork: DispatchWorkItem?
+
+    private func settingsChanged(from old: AppSettings) {
+        // Typing in a name field changes settings on every key: save once
+        // things settle, and only re-register shortcuts when they changed.
+        saveWork?.cancel()
+        let snapshot = settings
+        let work = DispatchWorkItem { Storage.save(snapshot) }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+
+        if Self.hotkeySignature(old) != Self.hotkeySignature(settings) { registerHotkeys() }
+
+        // The running live mood was deleted: stop it.
+        if let live = liveMood, !settings.moods.contains(where: { $0.id == live.id }) {
+            stopLive()
+        }
+        // The mood that's on was edited: show the change right away.
+        if let id = settings.activeMoodID, old.activeMoodID == id,
+           let now = settings.moods.first(where: { $0.id == id }),
+           let before = old.moods.first(where: { $0.id == id }),
+           now.lighting != before.lighting || now.live != before.live || now.paletteName != before.paletteName {
+            reapplyWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.settings.activeMoodID == id,
+                      let mood = self.settings.moods.first(where: { $0.id == id }) else { return }
+                if self.musicOn && self.musicMood?.id != id { return }
+                self.apply(mood)
+            }
+            reapplyWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
+        if old.customColors != settings.customColors, let mood = liveMood, mood.paletteName == MusicPalette.customName {
+            let palette = livePalette(mood)
+            queue.async { [weak self] in self?.liveRenderer.palette = palette }
+        }
+    }
+
+    /// Save now (on quit).
+    func saveNow() {
+        saveWork?.cancel()
+        Storage.save(settings)
+    }
+
+    private static func hotkeySignature(_ s: AppSettings) -> [String] {
+        s.moods.map { "m\($0.id)\(String(describing: $0.hotkey))" }
+            + s.macros.map { "k\($0.id)\(String(describing: $0.hotkey))\(String(describing: $0.moodID))\($0.value.isEmpty)" }
+            + ["music\(String(describing: s.musicHotkey))", "active\(String(describing: s.activeMoodID))"]
+    }
+
+    // MARK: Moods: delete, duplicate, import, export
+
+    func deleteMood(_ id: UUID) {
+        if liveMood?.id == id { stopLive() }
+        settings.deleteMood(id)
+    }
+
+    @discardableResult
+    func duplicateMood(_ id: UUID) -> Mood? {
+        guard let i = settings.moods.firstIndex(where: { $0.id == id }) else { return nil }
+        let copy = settings.moods[i].copy(named: settings.moods[i].name + " copy")
+        settings.moods.insert(copy, at: i + 1)
+        return copy
+    }
+
+    /// Put back the built-in moods that were deleted. Returns how many.
+    func restoreBuiltInMoods() -> Int {
+        var s = settings
+        let n = s.addMissingBuiltInMoods()
+        if n > 0 { settings = s }
+        return n
+    }
+
+    func exportMoods(_ moods: [Mood], to url: URL) throws {
+        // Shortcuts and apps are personal; leave them out of a shared file.
+        let shared = moods.map { m -> Mood in var c = m; c.hotkey = nil; c.apps = []; return c }
+        try Storage.encode(MoodFile(moods: shared)).write(to: url, options: .atomic)
+    }
+
+    func importMoods(from url: URL) throws -> Int {
+        let file = try JSONDecoder().decode(MoodFile.self, from: Data(contentsOf: url))
+        guard !file.moods.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+        var s = settings
+        let added = s.importMoods(file.moods)
+        settings = s
+        return added.count
+    }
+
+    /// Back to how the app is for a new user. Your keyboard's saved original
+    /// lighting backup is kept.
+    func resetAllSettings() {
+        if musicOn { stopMusic() }
+        if liveMood != nil { stopLive() }
+        var fresh = AppSettings.defaults
+        fresh.welcomeDone = true
+        settings = fresh
+        applyDockSetting()
+    }
+
+    // MARK: App-wide options
+
+    func setShowInDock(_ on: Bool) {
+        settings.showInDock = on
+        applyDockSetting()
+    }
+
+    private func applyDockSetting() {
+        NSApp?.setActivationPolicy(settings.showInDock ? .regular : .accessory)
+    }
+
+    var launchesAtLogin: Bool { SMAppService.mainApp.status == .enabled }
+
+    /// Returns an error message if macOS refused.
+    func setLaunchAtLogin(_ on: Bool) -> String? {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            objectWillChange.send()
+            return nil
+        } catch {
+            objectWillChange.send()
+            return "macOS didn't allow it: \(error.localizedDescription). Move F99 Mood to Applications and try again, or add it under System Settings → General → Login Items."
+        }
+    }
+
+    // MARK: Lock, sleep, idle and app switching
+
+    /// 0...1, how bright frames go out (dim when idle, 0 when locked).
+    /// Only touched on `queue`; eases towards `dimTarget`.
+    nonisolated(unsafe) private var dimLevel = 1.0
+    nonisolated(unsafe) private var dimTarget = 1.0
+    /// The keyboard-effect lighting to put back after the lock screen.
+    private var lightingBeforeDark: ConfigPage.Lighting?
+    /// The mood to go back to when leaving an app that switched moods.
+    private var moodBeforeApp: UUID??
+    private var appMoodID: UUID?
+
+    private func watchSystem() {
+        let dnc = DistributedNotificationCenter.default()
+        dnc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.setDark(true) }
+        }
+        dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.setDark(false) }
+        }
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.setDark(true) }
+        }
+        ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            // Waking the screen may still show the lock screen; wait for the
+            // unlock in that case.
+            MainActor.assumeIsolated { if !Self.screenLocked { self?.setDark(false) } }
+        }
+        // Sleep cuts the USB connection: end the stream first so the keyboard
+        // isn't left in per-key mode, and pick it up again after waking.
+        ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.resumeMusicAfterConnect = self.musicOn
+                if self.musicOn { self.stopMusic() }
+                if self.liveMood != nil { self.stopLive() }
+                self.queue.sync {} // let the restore finish before sleeping
+            }
+        }
+        ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            // Give USB a moment to come back, then start afresh.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                guard let self, Keyboard.isPresent else { return }
+                self.connect()
+            }
+        }
+        ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            let id = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            MainActor.assumeIsolated { self?.frontAppChanged(id) }
+        }
+    }
+
+    private static var screenLocked: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
+    }
+
+    private var currentDimLevel: Double { darkened ? 0 : idleDimmed ? Self.idleLevel : 1 }
+
+    private func setDark(_ dark: Bool) {
+        guard dark != darkened else { return }
+        if dark && !settings.darkWhenLocked { return }
+        darkened = dark
+        let target = currentDimLevel
+        queue.async { [weak self] in self?.dimTarget = target; if dark { self?.dimLevel = 0 } }
+        if musicOn || liveMood != nil { return }
+        // A keyboard effect: switch its lights off, and back on afterwards.
+        guard canWrite else { return }
+        if dark {
+            guard let current = page?.current, current.brightness > 0 else { return }
+            lightingBeforeDark = current
+            var off = current
+            off.brightness = 0
+            perform { try $0.apply(off) }
+        } else if let before = lightingBeforeDark {
+            lightingBeforeDark = nil
+            perform { try $0.apply(before) }
+        }
+    }
+
+    static let idleLevel = 0.25
+
+    private func checkIdle() {
+        guard settings.dimAfterMinutes > 0, musicOn || liveMood != nil else {
+            if idleDimmed { setIdle(false) }
+            return
+        }
+        let anyInput = CGEventType(rawValue: ~0)!
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+        setIdle(idle >= Double(settings.dimAfterMinutes) * 60)
+    }
+
+    private func setIdle(_ on: Bool) {
+        guard on != idleDimmed else { return }
+        idleDimmed = on
+        let target = currentDimLevel
+        queue.async { [weak self] in self?.dimTarget = target }
+    }
+
+    private func frontAppChanged(_ bundleID: String?) {
+        guard let bundleID, bundleID != Bundle.main.bundleIdentifier else { return }
+        if let mood = settings.moods.first(where: { $0.apps.contains(bundleID) }) {
+            guard appMoodID != mood.id else { return }
+            if appMoodID == nil { moodBeforeApp = .some(settings.activeMoodID) }
+            appMoodID = mood.id
+            if settings.activeMoodID != mood.id || (mood.live != nil && liveMood?.id != mood.id) { apply(mood) }
+        } else if appMoodID != nil {
+            // Back from the app: the mood from before it.
+            appMoodID = nil
+            if case .some(let previous) = moodBeforeApp, let id = previous,
+               let mood = settings.moods.first(where: { $0.id == id }) {
+                apply(mood)
+            }
+            moodBeforeApp = nil
         }
     }
 
@@ -700,11 +1151,30 @@ final class AppModel: ObservableObject {
             bindings.append((key, { [weak self] in self?.toggleMusic() }))
         }
         for macro in settings.macros {
-            guard let key = macro.hotkey,
+            guard let key = macro.hotkey, !macro.value.isEmpty,
                   macro.moodID == nil || macro.moodID == settings.activeMoodID else { continue }
-            bindings.append((key, { MacroRunner.run(macro) }))
+            let id = macro.id
+            bindings.append((key, { [weak self] in
+                // The macro as it is now, not as it was when registered.
+                if let m = self?.settings.macros.first(where: { $0.id == id }) { MacroRunner.run(m) }
+            }))
         }
-        refusedHotkeys = HotkeyCenter.shared.register(bindings)
+        refusedHotkeys = HotkeyCenter.shared.register(bindings) + Array(settings.duplicateHotkeys)
+    }
+}
+
+/// Music level and tempo for the meter, kept apart from `AppModel` so a
+/// change redraws only the meter.
+@MainActor
+final class MusicMeter: ObservableObject {
+    @Published private(set) var level: Float = 0
+    @Published private(set) var bpm: Float = 0
+
+    func update(level: Float, bpm: Float) {
+        // Ignore tiny changes; the meter can't show them anyway.
+        if abs(level - self.level) > 0.02 || (level == 0) != (self.level == 0) { self.level = level }
+        let rounded = bpm.rounded()
+        if rounded != self.bpm { self.bpm = rounded }
     }
 }
 

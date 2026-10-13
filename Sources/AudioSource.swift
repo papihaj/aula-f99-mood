@@ -38,6 +38,7 @@ final class SampleBuffer {
 enum AudioError: LocalizedError {
     case system(String, OSStatus)
     case microphoneDenied
+    case noMicrophone
 
     var errorDescription: String? {
         switch self {
@@ -45,6 +46,8 @@ enum AudioError: LocalizedError {
             return "Couldn't listen to your Mac's audio (\(what), error \(status)). Allow F99 Mood under System Settings → Privacy & Security → Screen & System Audio Recording."
         case .microphoneDenied:
             return "Microphone access is off. Allow F99 Mood under System Settings → Privacy & Security → Microphone."
+        case .noMicrophone:
+            return "This Mac has no microphone to listen with. Plug one in, or choose “Sound playing on this Mac” instead."
         }
     }
 }
@@ -52,6 +55,9 @@ enum AudioError: LocalizedError {
 protocol AudioSource: AnyObject {
     func start(into buffer: SampleBuffer) throws
     func stop()
+    /// Called (on the main queue) when the sound goes to a different device,
+    /// say AirPods connecting, so listening has to start again.
+    var onDeviceChange: (() -> Void)? { get set }
 }
 
 /// Everything the Mac is playing, through a Core Audio process tap
@@ -61,8 +67,19 @@ final class SystemAudioSource: AudioSource {
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private let queue = DispatchQueue(label: "f99.audio", qos: .userInitiated)
+    var onDeviceChange: (() -> Void)?
+    private var listener: AudioObjectPropertyListenerBlock?
+    private static var outputDeviceAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
 
     func start(into buffer: SampleBuffer) throws {
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.onDeviceChange?() }
+        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &Self.outputDeviceAddress,
+                                               .main, block) == noErr {
+            listener = block
+        }
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         description.uuid = UUID()
         description.name = "F99 Mood"
@@ -118,6 +135,11 @@ final class SystemAudioSource: AudioSource {
     }
 
     func stop() {
+        if let listener {
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &Self.outputDeviceAddress,
+                                                   .main, listener)
+            self.listener = nil
+        }
         if aggregateID != kAudioObjectUnknown {
             if let procID {
                 AudioDeviceStop(aggregateID, procID)
@@ -132,7 +154,8 @@ final class SystemAudioSource: AudioSource {
     }
 
     private static func defaultOutputUID() throws -> String {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+        // The device music plays through (not the one for alert sounds).
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
                                                  mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
         var device = AudioObjectID(kAudioObjectUnknown)
@@ -152,11 +175,17 @@ final class SystemAudioSource: AudioSource {
 /// The built-in (or any default) microphone, for music playing in the room.
 final class MicrophoneSource: AudioSource {
     private let engine = AVAudioEngine()
+    var onDeviceChange: (() -> Void)?
 
     func start(into buffer: SampleBuffer) throws {
-        guard AVCaptureDevice.authorizationStatus(for: .audio) != .denied else { throw AudioError.microphoneDenied }
+        let access = AVCaptureDevice.authorizationStatus(for: .audio)
+        guard access != .denied, access != .restricted else { throw AudioError.microphoneDenied }
+        guard AVCaptureDevice.default(for: .audio) != nil else { throw AudioError.noMicrophone }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
+        // With no input device the format is empty, and installing a tap
+        // would crash.
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw AudioError.noMicrophone }
         buffer.setSampleRate(format.sampleRate)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { pcm, _ in
             guard let channel = pcm.floatChannelData?[0] else { return }

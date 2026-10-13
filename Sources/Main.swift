@@ -41,7 +41,7 @@ struct F99MoodApp: App {
         Window("F99 Mood", id: "main") {
             MainView().environmentObject(model)
         }
-        .defaultSize(width: 760, height: 700)
+        .defaultSize(width: 760, height: 760)
 
         MenuBarExtra {
             MenuView().environmentObject(model)

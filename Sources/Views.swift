@@ -23,7 +23,7 @@ struct MenuView: View {
 
             ScrollView {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(model.settings.moods) { mood in
+                    ForEach(model.settings.moods.filter { !$0.hidden }) { mood in
                         MoodButton(mood: mood)
                     }
                 }
@@ -32,6 +32,7 @@ struct MenuView: View {
 
             MusicControls()
 
+            if model.needsAccessibility { AccessibilityBanner(compact: true) }
             if let error = model.lastError {
                 Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
@@ -105,9 +106,9 @@ struct MoodButton: View {
                 Text(mood.emoji).font(.title2)
                 Text((model.settings.startupMoodID == mood.id ? "★ " : "") + mood.name).font(.callout).lineLimit(1)
                 if mood.live != nil {
-                    Text("LIVE").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Color.pink, in: Capsule())
+                    Text("LIVE").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color(red: 0.75, green: 0.05, blue: 0.4), in: Capsule())
                 }
                 if let key = mood.hotkey {
                     Text(key.display).font(.caption2).foregroundStyle(.secondary)
@@ -120,6 +121,8 @@ struct MoodButton: View {
         }
         .buttonStyle(.plain)
         .disabled(model.busy)
+        .accessibilityLabel("\(mood.name)\(mood.live != nil ? ", live effect" : "")\(model.settings.startupMoodID == mood.id ? ", start-up mood" : "")")
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 
@@ -131,37 +134,67 @@ struct EditorView: View {
             MoodsTab().tabItem { Label("Moods", systemImage: "paintpalette") }
             MacrosTab().tabItem { Label("Macros", systemImage: "command") }
             MusicTab().tabItem { Label("Music", systemImage: "music.note") }
+            LightsTab().tabItem { Label("Lights", systemImage: "light.max") }
             KeyboardTab().tabItem { Label("Keyboard", systemImage: "keyboard") }
+            GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
         }
         .padding()
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(minWidth: 720, minHeight: 460)
     }
 }
 
 struct MoodsTab: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var selection = ViewState<UUID?>(nil)
+    @StateObject private var confirmDelete = ViewState(false)
+    @StateObject private var message = ViewState<String?>(nil)
+
+    private var selected: Mood? { model.settings.moods.first { $0.id == selection.value } }
 
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
                 List(selection: $selection.value) {
                     ForEach(model.settings.moods) { mood in
-                        Text("\(mood.emoji)  \(mood.name)").tag(mood.id)
+                        HStack {
+                            Text("\(mood.emoji)  \(mood.name)")
+                            Spacer()
+                            if mood.hidden {
+                                Image(systemName: "eye.slash").foregroundStyle(.secondary).accessibilityLabel("hidden")
+                            }
+                        }.tag(mood.id)
                     }
                     .onMove { model.settings.moods.move(fromOffsets: $0, toOffset: $1) }
                 }
-                ListButtons(add: {
-                    let mood = Mood(name: "New mood", emoji: "✨",
-                                    lighting: .init(effect: 1, brightness: 3, speed: 2, color: 6))
-                    model.settings.moods.append(mood)
-                    selection.value = mood.id
-                }, remove: {
-                    model.settings.moods.removeAll { $0.id == selection.value }
-                    selection.value = nil
-                }, canRemove: selection.value != nil)
+                HStack(spacing: 0) {
+                    ListButtons(add: {
+                        let mood = Mood(name: "New mood", emoji: "✨",
+                                        lighting: .init(effect: 1, brightness: 3, speed: 2, color: 6), hotkey: nil)
+                        model.settings.moods.append(mood)
+                        selection.value = mood.id
+                    }, remove: { confirmDelete.value = true }, canRemove: selection.value != nil)
+                    Menu {
+                        Button("Duplicate") {
+                            if let id = selection.value, let copy = model.duplicateMood(id) { selection.value = copy.id }
+                        }.disabled(selection.value == nil)
+                        Divider()
+                        Button("Export this mood…") { if let m = selected { export([m]) } }.disabled(selected == nil)
+                        Button("Export all moods…") { export(model.settings.moods) }
+                        Button("Import moods…") { importMoods() }
+                        Divider()
+                        Button("Restore built-in moods") {
+                            let n = model.restoreBuiltInMoods()
+                            message.value = n == 0 ? "All the built-in moods are already here."
+                                : "Added back \(n) built-in mood\(n == 1 ? "" : "s")."
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .accessibilityLabel("More mood actions")
+                    .padding(.trailing, 6)
+                }
             }
-            .frame(minWidth: 180, maxWidth: 240)
+            .frame(minWidth: 190, maxWidth: 250)
 
             Group {
                 if let i = model.settings.moods.firstIndex(where: { $0.id == selection.value }) {
@@ -174,6 +207,44 @@ struct MoodsTab: View {
             .frame(minWidth: 420)
         }
         .onAppear { selection.value = selection.value ?? model.settings.moods.first?.id }
+        .confirmationDialog("Delete \(selected.map { "“\($0.name)”" } ?? "this mood")?", isPresented: $confirmDelete.value) {
+            Button("Delete", role: .destructive) {
+                guard let id = selection.value else { return }
+                let index = model.settings.moods.firstIndex { $0.id == id } ?? 0
+                model.deleteMood(id)
+                let moods = model.settings.moods
+                selection.value = moods.isEmpty ? nil : moods[min(index, moods.count - 1)].id
+            }
+        } message: {
+            Text("Built-in moods can be put back later with “Restore built-in moods”.")
+        }
+        .alert(message.value ?? "", isPresented: Binding(get: { message.value != nil }, set: { if !$0 { message.value = nil } })) {
+            Button("OK") { message.value = nil }
+        }
+    }
+
+    private func export(_ moods: [Mood]) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = moods.count == 1 ? "\(moods[0].name).f99mood.json" : "F99 Moods.f99mood.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try model.exportMoods(moods, to: url) } catch { message.value = "Couldn't save: \(error.localizedDescription)" }
+    }
+
+    private func importMoods() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        var total = 0
+        for url in panel.urls {
+            do { total += try model.importMoods(from: url) } catch {
+                message.value = "“\(url.lastPathComponent)” isn't an F99 Mood file."
+                return
+            }
+        }
+        message.value = "Imported \(total) mood\(total == 1 ? "" : "s"). Shortcuts aren't imported; add your own."
+        selection.value = model.settings.moods.last?.id
     }
 }
 
@@ -186,7 +257,14 @@ struct MoodEditor: View {
         Form {
             Section {
                 TextField("Name", text: $mood.name)
-                TextField("Emoji", text: $mood.emoji)
+                if mood.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text("Give the mood a name so you can tell it apart.").font(.caption).foregroundStyle(.red)
+                } else if model.settings.moods.filter({ $0.name == mood.name }).count > 1 {
+                    Text("Another mood has this name too.").font(.caption).foregroundStyle(.orange)
+                }
+                TextField("Emoji", text: Binding(get: { mood.emoji },
+                                                 set: { mood.emoji = String($0.prefix(2)) }))
+                Toggle("Show in the mood grid and menu bar", isOn: Binding(get: { !mood.hidden }, set: { mood.hidden = !$0 }))
             }
             Section("Lighting") {
                 Picker("Effect", selection: Binding(
@@ -218,9 +296,21 @@ struct MoodEditor: View {
                             note: mood.lighting.brightness == 0 ? "0 turns the lights off" : nil)
                 LevelSlider(title: "Speed", value: $mood.lighting.speed, range: F99.speedLevels, note: nil)
                     .disabled(mood.live == nil && effect?.hasSpeed == false)
+                if mood.live != nil {
+                    Picker("Colours", selection: Binding(
+                        get: { mood.paletteName ?? "" },
+                        set: { mood.paletteName = $0.isEmpty ? nil : $0 })) {
+                        Text("The colour below").tag("")
+                        ForEach(MusicPalette.presets) { Text("Theme: \($0.name)").tag($0.name) }
+                        Text("Theme: my custom colours").tag(MusicPalette.customName)
+                    }
+                    if mood.paletteName == MusicPalette.customName {
+                        Text("Edit your custom colours under Music → Colour theme.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 ColorRow(color: $mood.lighting.color)
-                    .disabled(mood.live == nil && effect?.hasColor == false)
-                if mood.live != nil && mood.lighting.color == F99.colorful {
+                    .disabled((mood.live == nil && effect?.hasColor == false) || mood.paletteName != nil)
+                if mood.live != nil && mood.paletteName == nil && mood.lighting.color == F99.colorful {
                     Text("Colourful uses the effect's own colours.").font(.caption).foregroundStyle(.secondary)
                 } else if mood.live == nil && effect?.hasColor == false {
                     Text("This effect picks its own colours.").font(.caption).foregroundStyle(.secondary)
@@ -228,6 +318,11 @@ struct MoodEditor: View {
             }
             Section("Shortcut") {
                 HotkeyPicker(hotkey: $mood.hotkey)
+            }
+            Section("Switch on automatically") {
+                AppList(apps: $mood.apps)
+                Text("While one of these apps is in front, this mood is on; switching away goes back to the mood from before. Great for games, video calls or your code editor.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Start-up mood", isOn: Binding(
@@ -238,8 +333,8 @@ struct MoodEditor: View {
             Section {
                 HStack {
                     Button("Use this mood now") { model.apply(mood) }
-                        .disabled(!model.canWrite || model.busy)
-                    if !model.canWrite { Text("Connect the keyboard by USB-C first").font(.caption).foregroundStyle(.secondary) }
+                        .disabled(model.busy)
+                    if !model.canWrite { Text("Shown on screen until the keyboard is connected by USB-C").font(.caption).foregroundStyle(.secondary) }
                 }
             }
         }
@@ -274,45 +369,99 @@ struct ColorRow: View {
             Text("Colour")
             Spacer()
             ForEach(F99.colors) { c in
-                Circle().fill(c.swiftUI)
-                    .frame(width: 22, height: 22)
-                    .overlay(Circle().stroke(Color.primary, lineWidth: color == c.id ? 2.5 : 0.5))
-                    .onTapGesture { color = c.id }
-                    .help(c.name)
+                dot(Circle().fill(c.swiftUI), id: c.id, name: c.name)
             }
-            Circle()
-                .fill(AngularGradient(colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red], center: .center))
-                .frame(width: 22, height: 22)
-                .overlay(Circle().stroke(Color.primary, lineWidth: color == F99.colorful ? 2.5 : 0.5))
-                .onTapGesture { color = F99.colorful }
-                .help("Colourful (cycles colours)")
+            dot(Circle().fill(AngularGradient(colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red], center: .center)),
+                id: F99.colorful, name: "Colourful (cycles colours)")
+        }
+    }
+
+    private func dot(_ fill: some View, id: Int, name: String) -> some View {
+        Button { color = id } label: {
+            fill.frame(width: 22, height: 22)
+                .overlay(Circle().stroke(Color.primary, lineWidth: color == id ? 2.5 : 0.5))
+        }
+        .buttonStyle(.plain)
+        .help(name)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(color == id ? .isSelected : [])
+    }
+}
+
+/// Apps that switch a mood on, picked from /Applications.
+struct AppList: View {
+    @Binding var apps: [String]
+
+    var body: some View {
+        ForEach(apps, id: \.self) { id in
+            HStack {
+                if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 18, height: 18)
+                    Text(FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: ""))
+                } else {
+                    Text(id).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { apps.removeAll { $0 == id } } label: { Image(systemName: "minus.circle") }
+                    .buttonStyle(.borderless).accessibilityLabel("Remove")
+            }
+        }
+        Button("Add an app…") {
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [.application]
+            panel.allowsMultipleSelection = true
+            panel.directoryURL = URL(fileURLWithPath: "/Applications")
+            guard panel.runModal() == .OK else { return }
+            for url in panel.urls {
+                if let id = Bundle(url: url)?.bundleIdentifier, !apps.contains(id) { apps.append(id) }
+            }
         }
     }
 }
 
 struct HotkeyPicker: View {
+    @EnvironmentObject var model: AppModel
     @Binding var hotkey: Hotkey?
 
     var body: some View {
-        let key = hotkey ?? Hotkey(keyCode: 18, modifiers: Hotkey.control | Hotkey.option)
+        let key = hotkey ?? model.settings.freeHotkey
+        let isFunctionKey = (Keys.name(for: key.keyCode) ?? "").hasPrefix("F")
         Toggle("Keyboard shortcut", isOn: Binding(get: { hotkey != nil },
-                                                  set: { hotkey = $0 ? key : nil }))
-        if hotkey != nil {
+                                                  set: { hotkey = $0 ? model.settings.freeHotkey : nil }))
+        if let current = hotkey {
             HStack {
                 ForEach([("⌃", Hotkey.control), ("⌥", Hotkey.option), ("⇧", Hotkey.shift), ("⌘", Hotkey.command)], id: \.1) { label, bit in
                     Toggle(label, isOn: Binding(
                         get: { key.modifiers & bit != 0 },
-                        set: { on in hotkey?.modifiers = on ? key.modifiers | bit : key.modifiers & ~bit }))
+                        set: { on in
+                            let mods = on ? key.modifiers | bit : key.modifiers & ~bit
+                            // A letter or number with no modifier would stop
+                            // that key typing anywhere on the Mac.
+                            if mods == 0 && !isFunctionKey { return }
+                            hotkey?.modifiers = mods
+                        }))
                     .toggleStyle(.button)
+                    .accessibilityLabel(["⌃": "Control", "⌥": "Option", "⇧": "Shift", "⌘": "Command"][label] ?? label)
                 }
-                Picker("", selection: Binding(get: { key.keyCode }, set: { hotkey?.keyCode = $0 })) {
+                Picker("Key", selection: Binding(get: { key.keyCode }, set: { code in
+                    hotkey?.keyCode = code
+                    let fn = (Keys.name(for: code) ?? "").hasPrefix("F")
+                    if !fn && hotkey?.modifiers == 0 { hotkey?.modifiers = Hotkey.control | Hotkey.option }
+                })) {
                     ForEach(Keys.all, id: \.code) { Text($0.name).tag($0.code) }
                 }
+                .labelsHidden()
                 .frame(width: 80)
             }
-            if key.modifiers == 0 && !(Keys.name(for: key.keyCode) ?? "").hasPrefix("F") {
-                Text("Add at least one modifier, or this key will stop typing normally.")
-                    .font(.caption).foregroundStyle(.orange)
+            if model.settings.duplicateHotkeys.contains(current) {
+                Text("Another mood, macro or the music shortcut uses \(current.display) too. Only one of them will work, so pick a different one.")
+                    .font(.caption).foregroundStyle(.red)
+            } else if model.refusedHotkeys.contains(current) {
+                Text("macOS or another app already uses \(current.display). Pick a different one.")
+                    .font(.caption).foregroundStyle(.red)
+            } else if key.modifiers == 0 {
+                Text("With no modifier, \(Keys.name(for: key.keyCode) ?? "this key") won't do its usual job while F99 Mood is open.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -326,8 +475,10 @@ struct ListButtons: View {
     var body: some View {
         HStack(spacing: 0) {
             Button(action: add) { Image(systemName: "plus").frame(width: 24, height: 20) }
+                .accessibilityLabel("Add")
             Button(action: remove) { Image(systemName: "minus").frame(width: 24, height: 20) }
                 .disabled(!canRemove)
+                .accessibilityLabel("Remove")
             Spacer()
         }
         .buttonStyle(.borderless)
@@ -364,6 +515,10 @@ struct MacrosTab: View {
                                 Text(m.hotkey?.display ?? "No shortcut").font(.caption).foregroundStyle(.secondary)
                             }.tag(m.id)
                         }
+                    }
+                    if model.settings.macros.isEmpty {
+                        Text("No macros yet. Press + to make one: a shortcut that types text for you or opens an app or link.")
+                            .font(.caption).foregroundStyle(.secondary).padding(8)
                     }
                     ListButtons(add: {
                         let m = Macro(name: "New macro", hotkey: nil, action: .typeText, value: "", moodID: nil)
@@ -417,13 +572,18 @@ struct MacroEditor: View {
                     ForEach(model.settings.moods) { Text("\($0.emoji) \($0.name) only").tag(UUID?.some($0.id)) }
                 }
                 HotkeyPicker(hotkey: $macro.hotkey)
-                if let key = macro.hotkey, model.refusedHotkeys.contains(key) {
-                    Text("macOS or another app already uses this shortcut. Pick a different one.")
-                        .font(.caption).foregroundStyle(.red)
-                }
             }
             Section {
                 Button("Test now") { MacroRunner.run(macro) }
+                    .disabled(macro.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if macro.value.isEmpty {
+                    Text(macro.action == .typeText ? "Add the text to type; until then the shortcut does nothing."
+                                                   : "Add an app or link to open; until then the shortcut does nothing.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if macro.action == .typeText {
+                    Text("For your safety, macros never type into password fields.").font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)
@@ -537,7 +697,7 @@ struct PaletteChooser: View {
                 HStack(spacing: 10) {
                     Text("Your colours").font(.caption)
                     ForEach(model.settings.customColors.indices, id: \.self) { i in
-                        ColorPicker("", selection: Binding(
+                        ColorPicker("Colour \(i + 1)", selection: Binding(
                             get: { model.settings.customColors[i].color },
                             set: { c in
                                 var colors = model.settings.customColors
@@ -576,6 +736,8 @@ struct PaletteChooser: View {
                                                               lineWidth: selected ? 1.5 : 0.5))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(palette.name) colours")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -602,6 +764,10 @@ struct MusicTab: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { model.setMusicStyle(style) }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAddTraits(model.settings.musicStyle == style ? .isSelected : [])
+                    .accessibilityAction { model.setMusicStyle(style) }
                 }
             }
             Section("Listen to") {
@@ -621,10 +787,7 @@ struct MusicTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Comfort") {
-                Toggle("Keep every key lit", isOn: Binding(get: { model.settings.keepKeysLit },
-                                                           set: { model.setKeepKeysLit($0) }))
-                Text("In live effects and music, no key drops below about half brightness, so the letters stay readable. (The keyboard's own built-in effects draw themselves, so this can't apply to them.)")
-                    .font(.caption).foregroundStyle(.secondary)
+                KeepLitControls()
                 Toggle("Reduced flashing", isOn: Binding(get: { model.settings.reducedFlashing },
                                                          set: { model.setReducedFlashing($0) }))
                 Text("Softer beats, no white flashes, and slower changes. Even with this off, F99 Mood never flashes the keyboard more than three times a second, and keeps brightness at 80% or less.")
@@ -632,6 +795,7 @@ struct MusicTab: View {
             }
             Section("Shortcut") {
                 HotkeyPicker(hotkey: $model.settings.musicHotkey)
+                Toggle("Start dancing when F99 Mood opens", isOn: $model.settings.musicAtLaunch)
             }
             Section {
                 Text("While music mode is on, the Mac sends colours to the keyboard about 20 times a second over the USB-C cable. When you stop it, pick a mood or quit the app, your previous lighting comes back.")

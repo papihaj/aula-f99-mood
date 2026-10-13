@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Effects the Mac draws and streams to the keyboard, about 20 frames a
 /// second, in the style of popular effects from other brands. The F99's own
@@ -45,8 +45,12 @@ enum LiveEffect: String, Codable, CaseIterable, Identifiable {
     var reactsToTyping: Bool { self == .typingRipples || self == .typingHeatmap || self == .cascade }
 
     /// Pressed keys flash bright with a halo of the palette's lightest colour,
-    /// on top of the effect.
+    /// on top of the effect (with the "Light up keys I press" setting on its
+    /// default, only Neon Cascade; it can be turned on for every effect).
     var pressGlow: Bool { self == .cascade }
+
+    /// The typing effects draw presses themselves; the glow would hide them.
+    var drawsPresses: Bool { self == .typingRipples || self == .typingHeatmap }
 
     /// Colours used when the mood is set to "colourful".
     var palette: MusicPalette {
@@ -78,6 +82,14 @@ final class LiveRenderer {
     /// The dimmest any key may get, 0...1 ("Keep every key lit" sets about
     /// half, so the letters stay readable).
     var minimumBrightness = 0.0
+    /// Draw the press glow on top of the effect.
+    var pressGlow = false
+    /// The glow's colour; nil uses the palette's lightest colour.
+    var pressColor: RGB? = nil
+    /// Halo size around a pressed key: 0 none, 1 normal, 2 large.
+    var haloSize = 1.0
+    /// Seconds for a pressed key to fade.
+    var pressFade = 0.45
 
     private var start = Date()
     private var presses: [(led: Int, x: Double, y: Double, at: Date)] = []
@@ -107,14 +119,16 @@ final class LiveRenderer {
             let keep = exp(-dt / 6)
             for i in heat.indices { heat[i] *= keep }
         }
-        presses.removeAll { now.timeIntervalSince($0.at) > 2 }
+        let keepPresses = max(2, pressFade * 5)
+        presses.removeAll { now.timeIntervalSince($0.at) > keepPresses }
 
         var values = [Double](repeating: 0, count: Keyboard.streamSlots * 3)
-        let light = palette.colors.max { $0.luminance < $1.luminance }.map { $0.mixed(with: RGB(1, 1, 1), 0.5) } ?? RGB(1, 1, 1)
+        let light = pressColor
+            ?? palette.colors.max { $0.luminance < $1.luminance }.map { $0.mixed(with: RGB(1, 1, 1), 0.5) } ?? RGB(1, 1, 1)
         for key in F99.keys where key.led < Keyboard.streamSlots {
             var (c, v) = color(key, t, now)
             if minimumBrightness > 0 { c = c.atLeast(peak: 0.7) }
-            if effect.pressGlow { (c, v) = pressed(key, c, v, light, now) }
+            if pressGlow && !presses.isEmpty { (c, v) = pressed(key, c, v, light, now) }
             v = minimumBrightness + (1 - minimumBrightness) * min(max(v, 0), 1)
             let level = v * MusicRenderer.maxBrightness * brightnessScale
             values[key.led * 3] = c.r * level
@@ -262,11 +276,11 @@ final class LiveRenderer {
             let age = now.timeIntervalSince(p.at)
             let d = Self.distance(key, p.x, p.y)
             if d < 0.001 {
-                let g = exp(-age / 0.45)
+                let g = exp(-age / pressFade)
                 color = color.mixed(with: flash, g)
                 value = max(value, g)
-            } else {
-                let g = exp(-pow(d / (0.05 + age * 0.12), 2)) * exp(-age / 0.6) * 0.75
+            } else if haloSize > 0 {
+                let g = exp(-pow(d / ((0.05 + age * 0.12) * haloSize), 2)) * exp(-age / (pressFade * 1.33)) * 0.75
                 if g > 0.02 {
                     color = color.mixed(with: light, g)
                     value = max(value, g)
@@ -334,10 +348,29 @@ enum KeyMap {
             71: "NumLock", 75: "Num /", 67: "Num*", 78: "Num-", 69: "Num+", 65: "Num .",
             82: "Num0", 83: "Num1", 84: "Num2", 85: "Num3", 86: "Num4", 87: "Num5", 88: "Num6",
             89: "Num7", 91: "Num8", 92: "Num9",
+            // Modifiers, as the F99 sends them in Windows mode (Win is ⌘,
+            // Alt is ⌥). Right ⌘ only exists with the keys swapped, where
+            // it's the right Alt key.
+            56: "LShift", 60: "RShift", 59: "LCtrl", 62: "RCtrl", 58: "LAlt", 61: "RAlt",
+            55: "LWin", 54: "RAlt", 57: "CapsLock",
         ]
         m.merge(extra) { _, new in new }
         return m
     }()
+
+    /// A modifier key's change is a press when its flag is now held. Caps
+    /// Lock toggles, so every change counts.
+    static func isPress(_ event: NSEvent) -> Bool {
+        let flag: NSEvent.ModifierFlags? = switch event.keyCode {
+        case 56, 60: .shift
+        case 59, 62: .control
+        case 58, 61: .option
+        case 54, 55: .command
+        default: nil
+        }
+        guard let flag else { return true }
+        return event.modifierFlags.contains(flag)
+    }
 
     static func led(forKeyCode code: UInt16) -> Int? {
         if code == 76 { return F99.keys.last { $0.name == "Enter" }?.led } // keypad Enter

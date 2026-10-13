@@ -21,11 +21,16 @@ struct MainView: View {
                 KeyboardPicture()
                     .aspectRatio(F99.boardSize.w / F99.boardSize.h * 0.97, contentMode: .fit)
                     .padding(14)
-                    .background(Color(white: 0.93), in: RoundedRectangle(cornerRadius: 16))
+                    .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.black.opacity(0.1)))
                 Text(caption).font(.callout).foregroundStyle(.secondary)
             }
 
+            if model.needsAccessibility { AccessibilityBanner(compact: false) }
+            if model.darkened || model.idleDimmed {
+                Label(model.darkened ? "Lights off while the screen is locked." : "Dimmed while you're away; touch a key to bring them back.",
+                      systemImage: "moon.zzz").font(.callout).foregroundStyle(.secondary)
+            }
             if let error = model.lastError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
@@ -35,23 +40,17 @@ struct MainView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     moodSection("Keyboard effects", "Built into the keyboard; they keep running after you quit.",
-                                model.settings.moods.filter { $0.live == nil })
+                                model.settings.moods.filter { $0.live == nil && !$0.hidden })
                     moodSection("Live effects", "Drawn by your Mac in the style of Razer, Corsair, ASUS and QMK; they run while F99 Mood is open.",
-                                model.settings.moods.filter { $0.live != nil })
+                                model.settings.moods.filter { $0.live != nil && !$0.hidden })
                 }
             }
-            .frame(minHeight: 220)
+            .frame(minHeight: 140)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Music").font(.headline)
-                    if model.musicOn {
-                        ProgressView(value: Double(model.musicLevel))
-                            .frame(width: 120)
-                            .tint(.pink)
-                        Text(model.musicBPM > 0 ? "\(Int(model.musicBPM.rounded())) BPM" : "listening…")
-                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                    }
+                    if model.musicOn { MusicMeterView(meter: model.meter) }
                 }
                 if model.musicOn && model.hearingNothing {
                     NotHearingBanner()
@@ -65,14 +64,18 @@ struct MainView: View {
                                                                          set: { model.setStripFollowsColors($0) }))
                     Toggle("Keep every key lit", isOn: Binding(get: { model.settings.keepKeysLit },
                                                                set: { model.setKeepKeysLit($0) }))
-                        .help("In live effects and music, no key drops below about half brightness, so you can always read the letters.")
+                        .help("In live effects and music, no key drops below a set brightness, so you can always read the letters.")
                 }
                 .toggleStyle(.checkbox)
                 .font(.callout)
             }
         }
         .padding(22)
-        .frame(minWidth: 680, minHeight: 760)
+        .frame(minWidth: 640, minHeight: 580)
+        .sheet(isPresented: Binding(get: { !model.settings.welcomeDone },
+                                    set: { if !$0 { model.settings.welcomeDone = true } })) {
+            WelcomeView().environmentObject(model)
+        }
     }
 
     @ViewBuilder
@@ -155,7 +158,7 @@ struct KeyboardPicture: View {
                     let label = Self.label(key.name)
                     if !label.isEmpty {
                         let font = Font.system(size: max(6, min(11, rect.height * 0.32)), weight: .medium)
-                        gc.draw(Text(label).font(font).foregroundColor(.black.opacity(0.55)),
+                        gc.draw(Text(label).font(font).foregroundColor(.black.opacity(0.75)),
                                 at: CGPoint(x: rect.minX + 3 * scale, y: rect.minY + 3 * scale),
                                 anchor: .topLeading)
                     }
@@ -361,5 +364,19 @@ struct NotHearingBanner: View {
         }
         .padding(10)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// The music level bar and tempo; the only view that redraws as they change.
+struct MusicMeterView: View {
+    @ObservedObject var meter: MusicMeter
+
+    var body: some View {
+        ProgressView(value: Double(meter.level))
+            .frame(width: 120)
+            .tint(.pink)
+            .accessibilityLabel("Music level")
+        Text(meter.bpm > 0 ? "\(Int(meter.bpm)) BPM" : "listening…")
+            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
     }
 }

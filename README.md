@@ -14,9 +14,13 @@ keyboard's lighting from a Mac.
 This is an unofficial app. It is not made by, supported by or connected to AULA
 or EPOMAKER.
 
-> **Status:** The app builds, and its automated tests pass. Music capture has
-> been tested on a real Mac. The app has **not yet been tried on a real F99**.
-> See [Testing it on your keyboard for the first time](#testing-it-on-your-keyboard-for-the-first-time).
+> **Status:** Tested on a real F99 (original model, wired): moods, live
+> streaming, music mode and the light strip's colour work. The automated tests
+> pass. See [Testing it on your keyboard for the first time](#testing-it-on-your-keyboard-for-the-first-time).
+
+A new install starts clean: the built-in moods, no macros, no start-up mood,
+and a short welcome screen to pick how it starts. Your choices are saved only
+on your Mac (`~/Library/Application Support/F99 Mood/`), never in the app.
 
 ---
 
@@ -56,12 +60,23 @@ open "build/F99 Mood.app"
 `build.sh` runs the tests first and then builds `build/F99 Mood.app`. The app
 icon is drawn by `Tools/make_icon.swift` (a minimal keyboard on black, every key
 lit from cyan to magenta with a wave of light running through it) and saved in
-`Resources/`. The other icon ideas are in `Resources/concepts/`. A keyboard
-icon appears in the menu bar. The app has no Dock icon.
+`Resources/`. A keyboard icon appears in the menu bar, and the app is in the
+Dock too (turn that off under **General**).
 
 To keep the app, drag `F99 Mood.app` into your Applications folder. To start it
-when you log in, go to **System Settings → General → Login Items** and add it
-there.
+when you log in, turn on **General → Open F99 Mood when I log in**.
+
+**Keep permissions across rebuilds.** macOS ties permissions (Input
+Monitoring, Accessibility, audio) to the app's signature. Run this once to make
+your own local signing certificate, and `build.sh` uses it from then on:
+
+```
+Tools/make_signing_identity.sh
+```
+
+Without it, the app is signed ad hoc and you have to allow it again after each
+build. To sign with a different certificate (say, a Developer ID), set
+`SIGN_IDENTITY="Your certificate name"` when running `build.sh`.
 
 ## Testing it on your keyboard for the first time
 
@@ -138,15 +153,14 @@ open. In the mood list they have a pink **LIVE** badge.
 | 💦 Typing Ripples | Rings spread from each key you press | Razer "Ripple", Corsair, QMK "Splash" |
 | 🌡️ Typing Heatmap | Keys you use most glow hotter | QMK "Typing Heatmap" |
 
-**Neon Cascade** is the **start-up mood** (★): F99 Mood switches to it whenever it
-opens. To make another mood the start-up mood, turn on **Start-up mood** in its
-settings. If the keyboard is replugged, the app carries on with whatever mood
-you're using.
+**Start-up mood** (★): pick one on the welcome screen, under **General**, or with
+**Start-up mood** in a mood's settings, and F99 Mood switches to it whenever it
+opens. There's none until you choose. If the keyboard is replugged, the app
+carries on with whatever mood you're using.
 
-**Keep every key lit** (on by default) keeps every key at about half brightness
-or more in live effects and music, and lifts very dark colours to a readable
-version of the same colour, so the letters stay readable. The keyboard's own
-built-in effects draw themselves, so it can't apply to them.
+**Keep every key lit** (off until you turn it on) keeps every key at a set
+brightness or more in live effects and music, and lifts very dark colours to a
+readable version of the same colour. See [Lights](#lights-brightness-key-presses-away).
 
 Any mood can use a live effect: in **Moods & Macros**, pick it from the
 **Effect** menu under "Live effects". Brightness, speed and colour work the same;
@@ -235,6 +249,42 @@ the right privacy setting.
 
 When you click **Stop dancing** or quit the app, your previous lighting comes
 back.
+
+### Lights: brightness, key presses, away
+
+**Moods & Macros → Lights**:
+
+- **Keep every key lit**, and how bright (20–80%). In live effects and music no
+  key drops below it, so you can read the letters on the F99's solid keycaps.
+- **Light up keys I press**: in Neon Cascade and the typing effects (default),
+  in every live effect, or off. Choose the colour (the theme's lightest, white,
+  or your own), the halo size (none to large) and how fast it fades.
+- **Dim after** 1–30 minutes without typing or using the mouse (live effects
+  and music); any input brings them back.
+- **Lights off while the screen is locked or asleep** (on by default). They come
+  back when you unlock.
+
+### Moods that switch on by themselves
+
+In a mood's settings, **Switch on automatically → Add an app…**. While that app
+is in front, the mood is on; switching away goes back to the mood you had. For
+example Gaming for Steam, Focus for your code editor, Lights out for Zoom.
+
+### Organising and sharing moods
+
+- **Duplicate**, **Export**, **Import** and **Restore built-in moods** are in the
+  **⋯** menu under the mood list. Exported files leave out your shortcuts and
+  apps, and imported moods never take over a shortcut.
+- Turn off **Show in the mood grid and menu bar** to keep a mood out of the way.
+- Live moods can use any **colour theme** (Electric, Neon, Fire, your custom
+  colours…) instead of a single colour.
+- Shortcuts that clash with another mood, macro or the music shortcut are shown
+  in red, and a new shortcut always starts on a free one.
+
+### General
+
+Launch at login, the start-up mood, the Dock icon, the welcome screen, where
+your settings are saved, and **Reset all settings**.
 
 ### Comfort and flashing
 
@@ -490,6 +540,10 @@ The app is careful because it writes to the keyboard's memory:
 | "Unrecognised keyboard" | The keyboard reported a different model. The app won't change it. Send the identity shown in the Keyboard tab. |
 | A mood doesn't change the lighting | Run `--info` and check what the keyboard reports. The app shows an error if the change didn't stick. |
 | Music mode: keys stay dark or flicker | Click **Stop dancing**. If the lighting doesn't come back, use **Keyboard → Restore original lighting**. |
+| The keyboard stays dark after a crash, Force Quit or unplugging mid-song | Open F99 Mood with the cable in: it notices the keyboard was left in per-key mode and puts your lighting back by itself. |
+| Typing effects don't light the keys I press | Turn on F99 Mood under Privacy & Security → Accessibility. The orange banner in the app has a button for it. |
+| Music stops reacting after switching to AirPods or another output | It should follow the new device by itself within a second. If not, stop and start the music. |
+| Settings look reset | If the settings file couldn't be read, it's kept as `settings-unreadable-….json` next to the new one (**General → Show in Finder**). |
 | Music mode doesn't react | Run `--listen` while music plays. If the bars don't move, check Screen & System Audio Recording permission, or switch to Microphone. |
 | Keypresses get missed or doubled in music mode | Stop music mode and report it. This is what too many updates look like. |
 | A macro doesn't type anything | Turn on F99 Mood under Privacy & Security → Accessibility. |
@@ -504,9 +558,9 @@ The app is careful because it writes to the keyboard's memory:
   (Found by testing: Fn + Shift changes settings byte 0x1c, the strip's style;
   byte 0x1d is its colour. AULA's own Windows app doesn't control the strip
   at all.)
-- **Built-in effects and colours only.** Moods use the keyboard's own 18
-  effects and 7 colours plus "colourful". You can't yet choose exact colours or
-  colour single keys.
+- **Keyboard effects use the keyboard's colours.** The keyboard's own 18 effects
+  only take its 7 colours plus "colourful". Live effects and music use any
+  colour.
 - **Macros live on the Mac.** They work only while the app is running. The
   format for storing macros on the keyboard itself hasn't been worked out yet.
 - **Key remapping isn't included.** For that, macOS's own **Keyboard → Modifier
@@ -532,6 +586,12 @@ Sources/
   Settings.swift         moods, macros and saving them to disk
   AppModel.swift         app state, connects everything together
   Views.swift            the menu bar panel and the settings window
+  SettingsViews.swift    the Lights and General tabs, the welcome screen
+  MainWindow.swift       the main window and the on-screen keyboard
+  LiveEffects.swift      the live effects and the key-press glow
+Tools/
+  make_icon.swift        draws the app icon
+  make_signing_identity.sh  a local signing certificate, so permissions stick
 Tests/
   main.swift             tests for settings changes, music analysis and the key layout
 ```

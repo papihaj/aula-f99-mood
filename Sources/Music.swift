@@ -153,7 +153,8 @@ final class MusicAnalyzer {
         // 16 bands spaced evenly in pitch from 40 Hz to 12 kHz, tilted up
         // 3 dB per octave so the treble isn't drowned out by the bass
         // (music, like pink noise, has much less energy up there).
-        let binHz = Float(sampleRate) / Float(size)
+        // A source that reports no sample rate would divide by zero below.
+        let binHz = Float(sampleRate > 0 ? sampleRate : 48_000) / Float(size)
         var db = [Float](repeating: -120, count: Self.bandCount)
         var weightedSum: Float = 0, total: Float = 0
         for b in 0..<Self.bandCount {

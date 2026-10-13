@@ -46,6 +46,57 @@ struct Mood: Codable, Identifiable, Hashable {
     /// A live effect drawn by the Mac instead of one of the keyboard's own.
     /// Brightness, speed and colour still come from `lighting`.
     var live: LiveEffect? = nil
+    /// Live moods: a colour theme by name ("Electric", "Custom", …) used
+    /// instead of `lighting.color`. Nil uses the colour, or the effect's own.
+    var paletteName: String? = nil
+    /// Bundle ids of apps that switch this mood on while they're in front.
+    var apps: [String] = []
+    /// Left out of the mood grids and the menu bar (still in the editor).
+    var hidden = false
+
+    init(id: UUID = UUID(), name: String, emoji: String, lighting: ConfigPage.Lighting,
+         hotkey: Hotkey?, live: LiveEffect? = nil) {
+        self.id = id; self.name = name; self.emoji = emoji
+        self.lighting = lighting; self.hotkey = hotkey; self.live = live
+    }
+
+    // Every field added after the first version is optional in the file, and
+    // a live effect this version doesn't know (from a newer one) is dropped
+    // rather than failing the whole file.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decode(String.self, forKey: .name)
+        emoji = try c.decodeIfPresent(String.self, forKey: .emoji) ?? "✨"
+        lighting = try c.decode(ConfigPage.Lighting.self, forKey: .lighting)
+        hotkey = try? c.decodeIfPresent(Hotkey.self, forKey: .hotkey)
+        live = try? c.decodeIfPresent(LiveEffect.self, forKey: .live)
+        paletteName = try? c.decodeIfPresent(String.self, forKey: .paletteName)
+        apps = (try? c.decodeIfPresent([String].self, forKey: .apps)) ?? []
+        hidden = (try? c.decodeIfPresent(Bool.self, forKey: .hidden)) ?? false
+    }
+
+    /// A copy with a new id and no shortcut, for "Duplicate" and imports.
+    func copy(named newName: String? = nil) -> Mood {
+        var m = self
+        m.id = UUID()
+        m.name = newName ?? name
+        m.hotkey = nil
+        m.apps = []
+        return m
+    }
+}
+
+/// Skips list entries that fail to decode, instead of failing the list.
+private struct Lenient<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+}
+
+extension KeyedDecodingContainer {
+    func decodeLenientArray<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> [T] {
+        try decode([Lenient<T>].self, forKey: key).compactMap(\.value)
+    }
 }
 
 struct Macro: Codable, Identifiable, Hashable {
@@ -62,6 +113,36 @@ struct Macro: Codable, Identifiable, Hashable {
     var value: String
     /// Only active while this mood is on; nil means always active.
     var moodID: UUID?
+
+    init(id: UUID = UUID(), name: String, hotkey: Hotkey?, action: Action, value: String, moodID: UUID?) {
+        self.id = id; self.name = name; self.hotkey = hotkey
+        self.action = action; self.value = value; self.moodID = moodID
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decode(String.self, forKey: .name)
+        hotkey = try? c.decodeIfPresent(Hotkey.self, forKey: .hotkey)
+        action = try c.decode(Action.self, forKey: .action)
+        value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
+        moodID = try? c.decodeIfPresent(UUID.self, forKey: .moodID)
+    }
+}
+
+/// How pressed keys light up in live effects.
+enum PressGlow: String, Codable, CaseIterable, Identifiable {
+    case typingEffects = "Neon Cascade and typing effects"
+    case allLive = "Every live effect"
+    case off = "Off"
+    var id: String { rawValue }
+}
+
+enum PressColor: String, Codable, CaseIterable, Identifiable {
+    case lightest = "Lightest theme colour"
+    case white = "White"
+    case custom = "My colour"
+    var id: String { rawValue }
 }
 
 
@@ -88,9 +169,29 @@ struct AppSettings: Codable {
     var stripFollowsColors = true
     /// In live effects and music, no key goes below about half brightness,
     /// so the letters stay readable (the F99's keycaps aren't see-through).
-    var keepKeysLit = true
+    var keepKeysLit = false
+    /// How bright "Keep every key lit" keeps keys, 0.2...0.8.
+    var keysLitLevel = 0.5
     /// The mood switched on whenever the app starts or the keyboard connects.
     var startupMoodID: UUID?
+    var pressGlow: PressGlow = .typingEffects
+    var pressColor: PressColor = .lightest
+    var pressCustomColor = RGB(hex: 0xffffff)
+    /// Halo size around a pressed key, 0 (none) ... 2.
+    var pressHalo = 1.0
+    /// How long a pressed key stays lit, in seconds.
+    var pressFade = 0.45
+    /// Dim live effects and music after this many minutes without typing or
+    /// using the mouse; 0 = never.
+    var dimAfterMinutes = 0
+    /// Turn the lights off while the screen is locked or asleep.
+    var darkWhenLocked = true
+    /// Show the app in the Dock (it's always in the menu bar).
+    var showInDock = true
+    /// Start music mode when the app opens.
+    var musicAtLaunch = false
+    /// The welcome screen has been seen.
+    var welcomeDone = false
     /// Which set of built-in moods this file was last updated to.
     var moodsVersion = 1
     var musicHotkey: Hotkey? = Hotkey(keyCode: 2, modifiers: Hotkey.control | Hotkey.option) // ⌃⌥D
@@ -105,23 +206,37 @@ struct AppSettings: Codable {
     // defaults for those instead of throwing the whole file away.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        moods = try c.decode([Mood].self, forKey: .moods)
-        macros = try c.decode([Macro].self, forKey: .macros)
+        moods = try c.decodeLenientArray(Mood.self, forKey: .moods)
+        macros = (try? c.decodeLenientArray(Macro.self, forKey: .macros)) ?? []
         activeMoodID = try c.decodeIfPresent(UUID.self, forKey: .activeMoodID)
-        musicStyle = try c.decodeIfPresent(MusicStyle.self, forKey: .musicStyle) ?? .spectrum
-        musicInput = try c.decodeIfPresent(MusicInput.self, forKey: .musicInput) ?? .system
+        musicStyle = (try? c.decodeIfPresent(MusicStyle.self, forKey: .musicStyle)) ?? .spectrum
+        musicInput = (try? c.decodeIfPresent(MusicInput.self, forKey: .musicInput)) ?? .system
         musicPaletteName = try c.decodeIfPresent(String.self, forKey: .musicPaletteName) ?? MusicPalette.electric.name
         reducedFlashing = try c.decodeIfPresent(Bool.self, forKey: .reducedFlashing) ?? false
         ledColorCorrection = try c.decodeIfPresent(Bool.self, forKey: .ledColorCorrection) ?? true
         stripFollowsColors = try c.decodeIfPresent(Bool.self, forKey: .stripFollowsColors) ?? true
         moodsVersion = try c.decodeIfPresent(Int.self, forKey: .moodsVersion) ?? 1
-        keepKeysLit = try c.decodeIfPresent(Bool.self, forKey: .keepKeysLit) ?? true
+        keepKeysLit = try c.decodeIfPresent(Bool.self, forKey: .keepKeysLit) ?? false
         startupMoodID = try c.decodeIfPresent(UUID.self, forKey: .startupMoodID)
+        func opt<T: Decodable>(_ k: CodingKeys) -> T? { (try? c.decodeIfPresent(T.self, forKey: k)) ?? nil }
+        keysLitLevel = min(max(opt(.keysLitLevel) ?? 0.5, 0.2), 0.8)
+        pressGlow = opt(.pressGlow) ?? .typingEffects
+        pressColor = opt(.pressColor) ?? .lightest
+        pressCustomColor = opt(.pressCustomColor) ?? RGB(hex: 0xffffff)
+        pressHalo = min(max(opt(.pressHalo) ?? 1, 0), 2)
+        pressFade = min(max(opt(.pressFade) ?? 0.45, 0.15), 2)
+        dimAfterMinutes = max(opt(.dimAfterMinutes) ?? 0, 0)
+        darkWhenLocked = opt(.darkWhenLocked) ?? true
+        showInDock = opt(.showInDock) ?? true
+        musicAtLaunch = opt(.musicAtLaunch) ?? false
+        // A file saved before the welcome screen existed belongs to someone
+        // who has already set the app up.
+        welcomeDone = opt(.welcomeDone) ?? true
         if let colors = try c.decodeIfPresent([RGB].self, forKey: .customColors), !colors.isEmpty {
             customColors = colors
         }
         if c.contains(.musicHotkey) {
-            musicHotkey = try c.decodeIfPresent(Hotkey.self, forKey: .musicHotkey)
+            musicHotkey = try? c.decodeIfPresent(Hotkey.self, forKey: .musicHotkey)
         }
     }
 
@@ -191,22 +306,15 @@ struct AppSettings: Codable {
         ("Gaming", .init(effect: 12, brightness: 4, speed: 2, color: 0)),
     ]
     /// 2: the effect-based set. 3: Gaming is back. 4: live effects.
-    /// 5: Neon Cascade, the start-up mood.
+    /// 5: Neon Cascade.
     static let moodsVersion = 5
 
+    /// What a new user starts with: the built-in moods, no macros, and the
+    /// keyboard left on its own lighting until they pick a mood. Your own
+    /// choices live in your settings file, never in the app.
     static let defaults: AppSettings = {
-        let focus = builtInMoods[0]
-        var s = AppSettings(
-            moods: builtInMoods,
-            macros: [
-                Macro(name: "Email signature", hotkey: Hotkey(keyCode: 1, modifiers: Hotkey.control | Hotkey.option),
-                      action: .typeText, value: "Best,\nYour Name", moodID: nil),
-                Macro(name: "Focus music", hotkey: Hotkey(keyCode: 46, modifiers: Hotkey.control | Hotkey.option),
-                      action: .open, value: "https://www.youtube.com/results?search_query=lofi+focus", moodID: focus.id),
-            ],
-            activeMoodID: nil)
+        var s = AppSettings(moods: builtInMoods, macros: [], activeMoodID: nil)
         s.moodsVersion = moodsVersion
-        s.startupMoodID = s.moods.first { $0.name == "Neon Cascade" }?.id
         return s
     }()
 
@@ -219,7 +327,17 @@ struct AppSettings: Codable {
             Self.firstMoods.contains { $0.0 == m.name && $0.1 == m.lighting }
                 && !Self.builtInMoods.contains { $0.name == m.name }
         }
-        var taken = Set(moods.compactMap(\.hotkey) + macros.compactMap(\.hotkey))
+        addMissingBuiltInMoods()
+        if let id = activeMoodID, !moods.contains(where: { $0.id == id }) { activeMoodID = nil }
+        moodsVersion = Self.moodsVersion
+    }
+
+    /// Put back any built-in mood that isn't in the list (by name), leaving
+    /// the rest alone. Returns how many were added.
+    @discardableResult
+    mutating func addMissingBuiltInMoods() -> Int {
+        var taken = Set(moods.compactMap(\.hotkey) + macros.compactMap(\.hotkey) + [musicHotkey].compactMap { $0 })
+        var added = 0
         // Add each missing built-in mood after the one before it in the
         // built-in list (so Gaming lands after Focus), else before Lights out.
         for (i, var mood) in Self.builtInMoods.enumerated() where !moods.contains(where: { $0.name == mood.name }) {
@@ -228,10 +346,67 @@ struct AppSettings: Codable {
             let previous = i > 0 ? moods.firstIndex { $0.name == Self.builtInMoods[i - 1].name } : nil
             let at = previous.map { $0 + 1 } ?? moods.firstIndex { $0.name == "Lights out" } ?? moods.count
             moods.insert(mood, at: at)
+            added += 1
         }
-        if let id = activeMoodID, !moods.contains(where: { $0.id == id }) { activeMoodID = nil }
-        if moodsVersion < 5 { startupMoodID = moods.first { $0.name == "Neon Cascade" }?.id }
-        moodsVersion = Self.moodsVersion
+        return added
+    }
+
+    /// Add moods from a shared file: new ids, no shortcuts or apps (they're
+    /// someone else's), and "(2)" after a name that's already taken.
+    @discardableResult
+    mutating func importMoods(_ incoming: [Mood]) -> [Mood] {
+        var added: [Mood] = []
+        for m in incoming {
+            var name = m.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.isEmpty { name = "Imported mood" }
+            let base = name
+            var n = 2
+            while moods.contains(where: { $0.name == name }) { name = "\(base) (\(n))"; n += 1 }
+            let copy = m.copy(named: name)
+            moods.append(copy)
+            added.append(copy)
+        }
+        return added
+    }
+
+    /// Every shortcut used more than once: by moods, macros or music.
+    var duplicateHotkeys: Set<Hotkey> {
+        var seen = Set<Hotkey>(), dupes = Set<Hotkey>()
+        for key in moods.compactMap(\.hotkey) + macros.compactMap(\.hotkey) + [musicHotkey].compactMap({ $0 }) {
+            if !seen.insert(key).inserted { dupes.insert(key) }
+        }
+        return dupes
+    }
+
+    /// The first ⌃⌥ shortcut nobody uses yet, for a newly switched-on one.
+    var freeHotkey: Hotkey {
+        let used = Set(moods.compactMap(\.hotkey) + macros.compactMap(\.hotkey) + [musicHotkey].compactMap { $0 })
+        for k in Keys.all {
+            let h = Hotkey(keyCode: k.code, modifiers: Hotkey.control | Hotkey.option)
+            if !used.contains(h) { return h }
+        }
+        return Hotkey(keyCode: 18, modifiers: Hotkey.control | Hotkey.option | Hotkey.shift)
+    }
+
+    /// Remove a mood and everything pointing at it.
+    mutating func deleteMood(_ id: UUID) {
+        moods.removeAll { $0.id == id }
+        if activeMoodID == id { activeMoodID = nil }
+        if startupMoodID == id { startupMoodID = nil }
+        for i in macros.indices where macros[i].moodID == id { macros[i].moodID = nil }
+    }
+}
+
+/// A file of moods to share: what "Export moods…" writes and "Import" reads.
+struct MoodFile: Codable {
+    var app = "F99 Mood"
+    var version = 1
+    var moods: [Mood]
+
+    init(moods: [Mood]) { self.moods = moods }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        moods = try c.decodeLenientArray(Mood.self, forKey: .moods)
     }
 }
 
@@ -248,8 +423,14 @@ enum Storage {
     static let backupURL = directory.appendingPathComponent("original-settings.bin")
 
     static func load() -> AppSettings {
-        guard let data = try? Data(contentsOf: settingsURL),
-              var s = try? JSONDecoder().decode(AppSettings.self, from: data) else { return .defaults }
+        guard let data = try? Data(contentsOf: settingsURL) else { return .defaults }
+        guard var s = try? JSONDecoder().decode(AppSettings.self, from: data) else {
+            // Don't overwrite a file we can't read: keep it next to the new one.
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            try? FileManager.default.moveItem(at: settingsURL,
+                                              to: directory.appendingPathComponent("settings-unreadable-\(stamp).json"))
+            return .defaults
+        }
         if s.moodsVersion < AppSettings.moodsVersion {
             s.upgradeMoods()
             save(s)
@@ -258,13 +439,35 @@ enum Storage {
     }
 
     static func save(_ s: AppSettings) {
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? enc.encode(s).write(to: settingsURL, options: .atomic)
+        try? encode(s).write(to: settingsURL, options: .atomic)
     }
 
+    static func encode<T: Encodable>(_ value: T) throws -> Data {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try enc.encode(value)
+    }
+
+    /// The lighting from before a live effect or music switched the keyboard
+    /// to per-key mode. That switch is saved on the keyboard, so if the app
+    /// can't switch it back (unplugged, crash, Force Quit), this file lets it
+    /// put things right the next time it connects.
+    static let streamBackupURL = directory.appendingPathComponent("before-stream.bin")
+
+    static func saveStreamBackup(_ page: ConfigPage) {
+        try? Data(page.bytes).write(to: streamBackupURL, options: .atomic)
+    }
+
+    static func loadStreamBackup() -> ConfigPage? {
+        guard let data = try? Data(contentsOf: streamBackupURL) else { return nil }
+        return ConfigPage([UInt8](data))
+    }
+
+    static func clearStreamBackup() { try? FileManager.default.removeItem(at: streamBackupURL) }
+
     static func saveBackupIfMissing(_ page: ConfigPage) {
-        guard !FileManager.default.fileExists(atPath: backupURL.path) else { return }
+        // A page stuck in per-key mode isn't anyone's "original" lighting.
+        guard !page.isStreamMode, !FileManager.default.fileExists(atPath: backupURL.path) else { return }
         try? Data(page.bytes).write(to: backupURL, options: .atomic)
     }
 

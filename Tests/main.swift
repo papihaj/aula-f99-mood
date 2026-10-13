@@ -340,7 +340,7 @@ check(KeyMap.led(forKeyCode: 76) == 112, "keypad Enter")
 // Neon Cascade: every key bright at all times; a pressed key flashes towards
 // the palette's lightest colour, with a halo around it.
 let cascade = LiveRenderer()
-cascade.effect = .cascade; cascade.palette = LiveEffect.cascade.palette
+cascade.effect = .cascade; cascade.palette = LiveEffect.cascade.palette; cascade.pressGlow = true
 let cStart = Date()
 var dimmest = 255
 for i in 0..<100 {
@@ -369,7 +369,64 @@ for i in 0..<60 {
 }
 check(litDimmest >= 40, "keys stay lit with the floor on: \(litDimmest)")
 
-// Neon Cascade is the default start-up mood.
-check(AppSettings.defaults.moods.first { $0.id == AppSettings.defaults.startupMoodID }?.name == "Neon Cascade", "start-up mood")
+// A new user gets no one else's choices: no start-up mood, no macros.
+check(AppSettings.defaults.startupMoodID == nil && AppSettings.defaults.macros.isEmpty, "clean defaults")
+
+// Settings from older and newer versions load without losing anything.
+let oldJSON = """
+{"moods":[{"id":"E13319A0-203E-4762-9B11-A39A5B513DD4","name":"Mine","emoji":"🌠","lighting":{"effect":1,"brightness":4,"speed":1,"color":7},"live":"Neon Cascade"},
+          {"name":"Future","emoji":"🚀","lighting":{"effect":1,"brightness":4,"speed":1,"color":7},"live":"Some Effect From Version 9"}],
+ "macros":[], "musicStyle":"Laser Show", "keepKeysLit":true, "moodsVersion":5}
+"""
+let saved = try! JSONDecoder().decode(AppSettings.self, from: Data(oldJSON.utf8))
+check(saved.moods.count == 2 && saved.moods[0].live == .cascade && saved.moods[0].apps.isEmpty, "old moods load")
+check(saved.moods[1].live == nil, "unknown live effect from a newer version is dropped, not fatal")
+check(saved.musicStyle == .spectrum && saved.keepKeysLit && saved.welcomeDone, "unknown style falls back; existing user skips welcome")
+check(saved.pressGlow == .typingEffects && saved.keysLitLevel == 0.5 && saved.darkWhenLocked, "new options get defaults")
+let roundTrip = try! JSONDecoder().decode(AppSettings.self, from: Storage.encode(saved))
+check(roundTrip.moods.map(\.id) == saved.moods.map(\.id), "settings round-trip")
+check(!AppSettings.defaults.welcomeDone && !AppSettings.defaults.keepKeysLit, "new users see the welcome screen")
+
+// Import: new ids, no shortcuts, names kept apart.
+var shared = AppSettings.defaults
+let focus = shared.moods.first { $0.name == "Focus" }!
+let added = shared.importMoods([focus, Mood(name: "  ", emoji: "x", lighting: focus.lighting, hotkey: nil)])
+check(added.count == 2 && added[0].name == "Focus (2)" && added[0].id != focus.id && added[0].hotkey == nil, "import renames and strips shortcuts")
+check(added[1].name == "Imported mood", "blank names get one")
+let file = try! JSONDecoder().decode(MoodFile.self, from: Storage.encode(MoodFile(moods: [focus])))
+check(file.moods.first?.name == "Focus", "mood file round-trip")
+
+// Delete clears everything pointing at the mood.
+var del = AppSettings.defaults
+let gone = del.moods[1].id
+del.activeMoodID = gone; del.startupMoodID = gone
+del.macros = [Macro(name: "m", hotkey: nil, action: .typeText, value: "hi", moodID: gone)]
+del.deleteMood(gone)
+check(del.activeMoodID == nil && del.startupMoodID == nil && del.macros[0].moodID == nil, "delete clears references")
+check(del.addMissingBuiltInMoods() == 1 && del.moods.contains { $0.name == AppSettings.defaults.moods[1].name }, "restore built-in moods")
+
+// Shortcuts: duplicates are found, and a new one is free.
+var clash = AppSettings.defaults
+check(clash.duplicateHotkeys.isEmpty, "built-in shortcuts don't clash")
+let free = clash.freeHotkey
+check(!clash.moods.contains { $0.hotkey == free } && clash.musicHotkey != free, "free shortcut is free")
+clash.moods[2].hotkey = clash.moods[0].hotkey
+check(clash.duplicateHotkeys.contains(clash.moods[0].hotkey!), "duplicate shortcut reported")
+
+// Press glow on any effect, in any colour, with or without a halo.
+let glow = LiveRenderer()
+glow.effect = .aurora; glow.palette = LiveEffect.aurora.palette
+glow.pressGlow = true; glow.pressColor = RGB(1, 0, 0); glow.haloSize = 0
+let gAt = Date()
+_ = glow.render(now: gAt)
+glow.keyPressed(led: gLED, at: gAt)
+let gFrame = glow.render(now: gAt.addingTimeInterval(0.05))
+check(Int(gFrame[gLED * 3]) > Int(gFrame[gLED * 3 + 2]) + 40, "custom press colour (red)")
+let gNext = glow.render(now: gAt.addingTimeInterval(0.1))
+let noHalo = LiveRenderer(); noHalo.effect = .aurora; noHalo.palette = LiveEffect.aurora.palette
+_ = noHalo.render(now: gAt); _ = noHalo.render(now: gAt.addingTimeInterval(0.05))
+let hBase = noHalo.render(now: gAt.addingTimeInterval(0.1))
+check(abs(Int(gNext[hLED * 3]) - Int(hBase[hLED * 3])) < 3, "halo size 0: neighbours untouched")
+check(KeyMap.led(forKeyCode: 56) == F99.keys.first { $0.name == "LShift" }!.led, "modifiers light up too")
 
 if failures == 0 { print("All tests passed.") } else { print("\(failures) test(s) failed."); exit(1) }
