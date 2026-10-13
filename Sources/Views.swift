@@ -19,21 +19,7 @@ struct MenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                StatusPill()
-                Spacer()
-                Button {
-                    openWindow(id: "main")
-                    NSApp.activate(ignoringOtherApps: true)
-                } label: { Image(systemName: "macwindow") }
-                .buttonStyle(.borderless).help("Open F99 Mood")
-            }
-
-            KeyboardPicture()
-                .frame(width: 278, height: 278 * F99.boardSize.h / F99.boardSize.w)
-                .padding(8)
-                .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .underPageBackgroundColor)))
+            StatusPill()
 
             ScrollView {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
@@ -42,9 +28,7 @@ struct MenuView: View {
                     }
                 }
             }
-            .frame(maxHeight: 250)
-
-            if let mood = model.activeMood, !model.musicOn { RemixBar(mood: mood, compact: true) }
+            .frame(maxHeight: 300)
 
             MusicControls(compact: true)
 
@@ -190,18 +174,15 @@ struct EditorView: View {
 
     enum Pane: String, CaseIterable, Identifiable {
         case home = "Home"
-        case moods = "Moods", schedule = "Schedule", macros = "Macros", music = "Music"
-        case alerts = "Alerts", settings = "Settings"
+        case moods = "Moods", macros = "Macros", music = "Music", settings = "Settings"
         var id: String { rawValue }
 
         var symbol: String {
             switch self {
             case .home: "house.fill"
             case .moods: "paintpalette.fill"
-            case .schedule: "clock.fill"
             case .macros: "command"
             case .music: "music.note"
-            case .alerts: "bell.badge.fill"
             case .settings: "gearshape.fill"
             }
         }
@@ -210,10 +191,8 @@ struct EditorView: View {
             switch self {
             case .home: .blue
             case .moods: .purple
-            case .schedule: .orange
             case .macros: .indigo
             case .music: .pink
-            case .alerts: .red
             case .settings: .gray
             }
         }
@@ -226,10 +205,10 @@ struct EditorView: View {
                     row(.home)
                 }
                 Section {
-                    ForEach([Pane.moods, .schedule, .macros, .music]) { row($0) }
+                    ForEach([Pane.moods, .macros, .music]) { row($0) }
                 }
                 Section {
-                    ForEach([Pane.alerts, .settings]) { row($0) }
+                    row(.settings)
                 }
             }
             .listStyle(.sidebar)
@@ -239,10 +218,8 @@ struct EditorView: View {
                 switch model.pane {
                 case .home: MainView()
                 case .moods: MoodsTab().padding(12)
-                case .schedule: ScheduleTab()
                 case .macros: MacrosTab().padding(12)
                 case .music: MusicTab()
-                case .alerts: AlertsTab()
                 case .settings: SettingsTab()
                 }
             }
@@ -734,6 +711,8 @@ struct MacroEditor: View {
 struct MusicControls: View {
     @EnvironmentObject var model: AppModel
     var compact = false
+    /// Style and colours too; only in the Music pane.
+    var full = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -764,14 +743,15 @@ struct MusicControls: View {
                 if let key = model.settings.musicHotkey, !compact { KeycapBadge(hotkey: key) }
             }
 
-            Picker("Style", selection: Binding(get: { model.settings.musicStyle }, set: { model.setMusicStyle($0) })) {
-                ForEach(MusicStyle.allCases) { Text($0.rawValue).tag($0) }
+            if full {
+                Picker("Style", selection: Binding(get: { model.settings.musicStyle }, set: { model.setMusicStyle($0) })) {
+                    ForEach(MusicStyle.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text(model.settings.musicStyle.summary).font(.caption).foregroundStyle(.secondary)
+                PaletteChooser()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(compact ? .small : .regular)
-
-            if !compact || model.musicOn { PaletteChooser() }
         }
     }
 }
@@ -851,26 +831,8 @@ struct MusicTab: View {
     var body: some View {
         Form {
             Section {
-                MusicControls()
+                MusicControls(full: true)
                 if model.musicOn && model.hearingNothing { NotHearingBanner() }
-            }
-            Section("Style") {
-                ForEach(MusicStyle.allCases) { style in
-                    HStack {
-                        Image(systemName: model.settings.musicStyle == style ? "largecircle.fill.circle" : "circle")
-                            .foregroundStyle(Color.accentColor)
-                        VStack(alignment: .leading) {
-                            Text(style.rawValue)
-                            Text(style.summary).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { model.setMusicStyle(style) }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityAddTraits(model.settings.musicStyle == style ? .isSelected : [])
-                    .accessibilityAction { model.setMusicStyle(style) }
-                }
             }
             Section("Listen to") {
                 Picker("Source", selection: Binding(get: { model.settings.musicInput }, set: { model.setMusicInput($0) })) {
@@ -882,15 +844,11 @@ struct MusicTab: View {
                      : "Music playing in the room.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Comfort") {
+            Section {
                 Toggle("Reduced flashing", isOn: Binding(get: { model.settings.reducedFlashing },
                                                          set: { model.setReducedFlashing($0) }))
-                Text("Softer beats and no white flashes.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Shortcut") {
-                HotkeyPicker(hotkey: $model.settings.musicHotkey)
                 Toggle("Start dancing when F99 Mood opens", isOn: $model.settings.musicAtLaunch)
+                HotkeyPicker(hotkey: $model.settings.musicHotkey)
             }
         }
         .formStyle(.grouped)

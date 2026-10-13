@@ -225,11 +225,11 @@ struct PaintEditor: View {
 
 // MARK: Schedule
 
-struct ScheduleTab: View {
+/// Moods at set times; a section of the Settings pane.
+struct ScheduleSection: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        Form {
             Section {
                 if model.settings.schedule.isEmpty {
                     Text("No times yet.")
@@ -245,18 +245,8 @@ struct ScheduleTab: View {
                     model.settings.schedule.append(ScheduleEntry(hour: 22, minute: 0, moodID: mood?.id))
                 } label: { Label("Add a time", systemImage: "plus") }
             } header: {
-                Text("Switch moods at set times")
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    if let now = Schedule.current(model.settings.schedule, at: Date()),
-                       let mood = model.settings.moods.first(where: { $0.id == now.moodID }) {
-                        Text("Right now: \(mood.name), since \(Self.time(now)).")
-                    }
-                }
-                .font(.caption).foregroundStyle(.secondary)
+                Text("Schedule")
             }
-        }
-        .formStyle(.grouped)
     }
 
     static func time(_ e: ScheduleEntry) -> String {
@@ -328,12 +318,13 @@ struct ScheduleRow: View {
 
 // MARK: Alerts and now playing
 
-struct AlertsTab: View {
+/// Calendar, Mail and now-playing on the keys; a section of the Settings pane.
+/// An alert also blinks the light strip until it's over or cleared.
+struct AlertsSection: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var denied = ViewState(CalendarWatcher.status == .denied || CalendarWatcher.status == .restricted)
 
     var body: some View {
-        Form {
             Section {
                 Toggle("Flash the keyboard before calendar events", isOn: Binding(
                     get: { model.settings.calendarAlerts },
@@ -360,15 +351,6 @@ struct AlertsTab: View {
                     ForEach([1, 2, 5, 10, 15], id: \.self) { Text("\($0) minute\($0 == 1 ? "" : "s") before").tag($0) }
                 }
                 .disabled(!model.settings.calendarAlerts)
-                if model.settings.calendarAlerts, let next = model.calendar.nextEvent() {
-                    Text("Next: \(next.title ?? "Event") at \(next.startDate.formatted(date: .omitted, time: .shortened))")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-            } header: {
-                Text("Calendar")
-            }
-
-            Section {
                 Toggle("Flash when new mail arrives in Mail", isOn: $model.settings.mailAlerts)
                 if model.settings.mailAlerts && model.mailNotAllowed {
                     HStack {
@@ -380,25 +362,7 @@ struct AlertsTab: View {
                         }
                     }
                 }
-            } header: {
-                Text("Mail")
-            }
-
-            Section {
-                Toggle("Turn the light strip a colour while an alert is waiting", isOn: $model.settings.stripAlerts)
-                if let alert = model.stripAlert {
-                    HStack {
-                        Label(alert, systemImage: "bell.fill").foregroundStyle(.pink)
-                        Spacer()
-                        Button("Clear") { model.clearAlert() }
-                    }
-                }
-            } header: {
-                Text("Light strip")
-            }
-
-            Section {
-                Toggle("Show song progress on the keys beside the strip", isOn: $model.settings.nowPlayingBar)
+                Toggle("Show song progress beside the strip", isOn: $model.settings.nowPlayingBar)
                 if model.settings.nowPlayingBar {
                     if model.nowPlayingNotAllowed {
                         HStack {
@@ -409,18 +373,11 @@ struct AlertsTab: View {
                                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!)
                             }
                         }
-                    } else {
-                        Label(model.songPlaying ? "A song is playing: watch the keys beside the light strip."
-                                                : "Play something in Spotify or Music to see it.",
-                              systemImage: model.songPlaying ? "music.note" : "pause.circle")
-                            .font(.callout).foregroundStyle(.secondary)
                     }
                 }
             } header: {
-                Text("Now playing")
+                Text("Alerts")
             }
-        }
-        .formStyle(.grouped)
     }
 }
 

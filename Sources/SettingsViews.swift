@@ -1,8 +1,8 @@
 import SwiftUI
 import IOKit.hid
 
-/// The Settings pane: lights, typing sounds, start-up, appearance, the
-/// keyboard connection and permissions, on one page.
+/// The Settings pane: lights, schedule, alerts, typing sounds, start-up,
+/// appearance, the keyboard connection and permissions, on one page.
 struct SettingsTab: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var loginError = ViewState<String?>(nil)
@@ -27,6 +27,8 @@ struct SettingsTab: View {
                 }
                 Toggle("Lights off while locked", isOn: $model.settings.darkWhenLocked)
             }
+            ScheduleSection()
+            AlertsSection()
             SoundsSection()
             Section("General") {
                 Toggle("Open at login", isOn: Binding(

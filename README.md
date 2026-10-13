@@ -236,6 +236,13 @@ the right privacy setting.
 When you click **Stop dancing** or quit the app, your previous lighting comes
 back.
 
+### The window
+
+The sidebar has five places: **Home** (the keyboard picture, your moods and a
+play button for music), **Moods** (edit, add and share moods), **Macros**,
+**Music** (style, colours, where to listen) and **Settings**. The menu bar
+panel has your moods, the music button and Open/Quit.
+
 ### Settings
 
 One page with everything else:
@@ -243,6 +250,10 @@ One page with everything else:
 - **Lights:** keep every key lit, light up keys you press, the strip matching
   your colours, dimming when you're away (off, or after 1–30 minutes) and
   lights off while the Mac is locked.
+- **Schedule:** switch to a mood at set times on chosen days.
+- **Alerts:** flash the keyboard before calendar events and when new mail
+  arrives, and show song progress beside the strip. An alert also blinks the
+  strip until it's over or you clear it on Home.
 - **Typing sounds:** Tactile, Clicky, Soft or your own file, and the volume.
 - **General:** open at login, start-up mood, appearance (light, dark or match
   the Mac) and the Dock icon.
@@ -284,6 +295,7 @@ softer beats, no white flashes and slower changes.
 |---|---|
 | `F99Mood --info` | Connects to the keyboard, reads it and prints the model and lighting. Changes nothing. |
 | `F99Mood --listen` | Shows a text equaliser of what music mode hears, for 10 seconds. Doesn't touch the keyboard. |
+| `open -n --stdout /dev/stdout "build/F99 Mood.app" --args --permissions` | Shows whether macOS allows Input Monitoring and Accessibility for this copy of the app. |
 
 The full path is `"build/F99 Mood.app/Contents/MacOS/F99Mood"`.
 

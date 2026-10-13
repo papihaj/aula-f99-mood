@@ -434,9 +434,7 @@ struct WirelessNote: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "cable.connector").foregroundStyle(.secondary).font(.title3)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Changing the lights needs the USB-C cable").font(.callout.weight(.semibold))
-                Text("Lighting changes need the USB-C cable.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("Plug in the keyboard with a USB-C cable to change its lights").font(.callout.weight(.semibold))
             }
         }
         .padding(10)
