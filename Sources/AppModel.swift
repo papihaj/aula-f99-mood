@@ -351,11 +351,6 @@ final class AppModel: ObservableObject {
         pushFloor()
     }
 
-    func setKeysLitLevel(_ level: Double) {
-        settings.keysLitLevel = min(max(level, 0.2), 0.8)
-        pushFloor()
-    }
-
     private func pushFloor() {
         let floor = keysLitFloor
         queue.async { [weak self] in
@@ -395,10 +390,6 @@ final class AppModel: ObservableObject {
     func preview(_ lighting: ConfigPage.Lighting) {
         if musicOn { stopMusic() }
         perform { try $0.apply(lighting) }
-    }
-
-    func refresh() {
-        perform { try $0.readSettings() }
     }
 
     var hasBackup: Bool { Storage.loadBackup() != nil }
@@ -448,11 +439,6 @@ final class AppModel: ObservableObject {
 
     func setStripFollowsColors(_ on: Bool) {
         settings.stripFollowsColors = on
-    }
-
-    func setColorCorrection(_ on: Bool) {
-        settings.ledColorCorrection = on
-        queue.async { [weak self] in self?.colorCorrection = on }
     }
 
     func setMusicInput(_ input: MusicInput) {

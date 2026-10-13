@@ -178,12 +178,9 @@ final class MusicAnalyzer {
         let loudest = db.max() ?? -120
         longPeakDB = max(loudest, longPeakDB - 0.4 * dt)   // falls 0.4 dB a second
         peakDB = max(loudest, peakDB - 3 * dt, longPeakDB - 24) // falls 3 dB a second
-        // Onset strength: how much the bass and low-mid bands jumped since the
-        // last call (half-wave rectified spectral flux). Each band is floored
-        // 30 dB below the current peak, so a big relative jump in a nearly
-        // silent band (a hi-hat's faint low end, background noise) doesn't
-        // count. Higher bands count only a little, so hi-hats and cymbals
-        // don't register as beats; they show in the treble bars instead.
+        // Onset strength: half-wave rectified spectral flux, mostly from the
+        // bass and low mids. Bands are floored 30 dB below the peak so noise
+        // in a quiet band doesn't count, and hi-hats show as treble, not beats.
         let floored = db.map { max($0, peakDB - 30) }
         var flux: Float = 0
         for b in 0..<Self.bandCount {
@@ -416,8 +413,6 @@ struct MusicPalette: Codable, Hashable, Identifiable {
         return MusicPalette(name: mood.name, colors: [deep, base, base.mixed(with: RGB(1, 1, 1), 0.5)])
     }
 
-    /// The light strip's colour for this palette: the firmware colour nearest
-    /// its main (first) colour.
     /// The keyboard colour closest to the palette as a whole, for the light
     /// strip. Palettes list their main colours first, so those count more.
     /// White only for a pale palette.

@@ -80,7 +80,7 @@ build. To sign with a different certificate (say, a Developer ID), set
 
 ## Testing it on your keyboard for the first time
 
-Nobody has run this app on an F99 yet, so try it in this order:
+On a new setup, try it in this order:
 
 1. **Plug the keyboard in with the USB-C cable** and set it to wired mode.
 2. **Run a read-only check.** This only reads from the keyboard and changes
@@ -591,6 +591,8 @@ detected as beats.
 
 ## Credits
 
+- App and app icon: papihaj. The icon is drawn by
+  `Tools/make_icon.swift`.
 - Music design: [WLED sound reactive](https://github.com/wled/WLED),
   [LedFx](https://github.com/LedFx/LedFx),
   [audio-reactive-led-strip](https://github.com/scottlawsonbc/audio-reactive-led-strip),

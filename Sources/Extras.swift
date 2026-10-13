@@ -148,14 +148,6 @@ final class CalendarWatcher {
         if alerted.count > 500 { alerted.removeAll() }
         return fresh
     }
-
-    /// The next event today, for the settings screen.
-    func nextEvent(now: Date = Date()) -> EKEvent? {
-        guard Self.allowed else { return nil }
-        let predicate = store.predicateForEvents(withStart: now, end: now.addingTimeInterval(24 * 3600), calendars: nil)
-        return store.events(matching: predicate).filter { !$0.isAllDay && $0.startDate >= now }
-            .min { $0.startDate < $1.startDate }
-    }
 }
 
 // MARK: Typing sounds

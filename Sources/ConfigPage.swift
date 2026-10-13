@@ -95,7 +95,7 @@ struct ConfigPage: Equatable {
         for r in Self.lightingRanges { bytes.replaceSubrange(r, with: other.bytes[r]) }
     }
 
-    /// The side light strip's settings, found on an F99 on 2026-10-12 and 13:
+    /// The side light strip's settings, worked out on a real F99:
     /// - 0x1c mode (`StripMode`): 0 off, 1 and 2 colour-changing gradients,
     ///   3 steady, 4 blinking. Fn + Shift steps through them; 5 and up show
     ///   steady red, so they aren't used.

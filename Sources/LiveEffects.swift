@@ -27,29 +27,6 @@ enum LiveEffect: String, Codable, CaseIterable, Identifiable {
     /// these or like a keyboard effect; they still work in saved moods.
     static let offered: [LiveEffect] = [.cascade, .aurora, .matrix, .fire, .ripples, .typingHeatmap, .painted]
 
-    /// Where the idea comes from.
-    var inspiredBy: String {
-        switch self {
-        case .cascade: return "Razer Chroma \"Wave\" and Corsair \"Rainbow Wave\", in the Neon and Electric colours"
-        case .matrix: return "QMK \"Digital Rain\", Razer Chroma"
-        case .fire: return "Razer Chroma \"Fire\", HyperX NGENUITY"
-        case .aurora: return "HyperX \"Aurora\", Wooting"
-        case .starlight: return "Razer Chroma \"Starlight\""
-        case .comet: return "ASUS Aura \"Comet\""
-        case .visor: return "Corsair iCUE \"Visor\""
-        case .lavaLamp: return "SignalRGB \"Lava Lamp\""
-        case .plasma: return "OpenRGB / SignalRGB \"Plasma\""
-        case .heartbeat: return "Logitech G HUB-style pulse"
-        case .galaxy: return "SignalRGB \"Galaxy\""
-        case .spiral: return "Corsair iCUE \"Spiral Rainbow\", QMK \"Cycle Spiral\""
-        case .candle: return "Philips Hue \"Candle\" scenes"
-        case .typingRipples: return "Razer \"Ripple\", Corsair \"Type Lighting\", QMK \"Splash\""
-        case .typingHeatmap: return "QMK \"Typing Heatmap\""
-        case .painted: return "per-key colours in Razer Synapse, Wooting and VIA"
-        case .ripples: return "Razer Chroma \"Ripple\" and the F99's own Ripples shining, in any colour theme"
-        }
-    }
-
     var reactsToTyping: Bool { self == .typingRipples || self == .typingHeatmap || self == .cascade }
 
     /// Pressed keys flash bright with a halo of the palette's lightest colour,
