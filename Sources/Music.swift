@@ -418,9 +418,26 @@ struct MusicPalette: Codable, Hashable, Identifiable {
 
     /// The light strip's colour for this palette: the firmware colour nearest
     /// its main (first) colour.
-    var stripColor: Int { F99.nearestColor(colors.first ?? RGB(1, 1, 1)) }
-    /// One colour: the strip in that colour. Several: the strip's own gradient.
-    var strip: ConfigPage.Strip { colors.count > 1 ? .gradient : .steady(stripColor) }
+    /// The keyboard colour closest to the palette as a whole, for the light
+    /// strip. Palettes list their main colours first, so those count more.
+    /// White only for a pale palette.
+    var stripColor: Int {
+        guard !colors.isEmpty else { return 6 }
+        let labs = colors.map(\.oklab)
+        func cost(_ c: F99.FirmwareColor) -> Double {
+            let o = RGB(c.rgb.0, c.rgb.1, c.rgb.2).oklab
+            return labs.enumerated().reduce(0) { sum, e in
+                let (i, l) = e
+                return sum + sqrt(pow(l.0 - o.0, 2) + pow(l.1 - o.1, 2) + pow(l.2 - o.2, 2)) / Double(i + 1)
+            }
+        }
+        let pale = colors.allSatisfy { min($0.r, $0.g, $0.b) > 0.6 }
+        return F99.colors.filter { pale || $0.id != 6 }.min { cost($0) < cost($1) }!.id
+    }
+    /// The strip can't show a palette's colours together (its only gradient is
+    /// the full rainbow), so it shows the palette's main colour, steady. Only
+    /// the Rainbow theme gets the rainbow gradient.
+    var strip: ConfigPage.Strip { name == "Rainbow" ? .gradient : .steady(stripColor) }
 
     /// The palette's last colour: kept back as the accent for big moments.
     var accent: RGB { colors.last ?? RGB(1, 1, 1) }

@@ -206,9 +206,11 @@ Click **Dance to music** in the menu, or press **⌃⌥D**. Choose a style:
   sparkles.
 
 The **light strip** between Backspace and Num Lock follows what's on the keys:
-its own colour-changing gradient while you dance to music or use a live effect
-with several colours, steady in a mood's colour when the mood has one, and off
-for Lights out. It can't flash with each beat: unlike the keys, the strip has no
+steady in the main colour of the mood or music theme (Electric blue, Fire red,
+Neon Cascade cyan), off for Lights out, and the keyboard's rainbow gradient only
+for rainbow moods and the Rainbow theme. Its gradient is always the full
+rainbow (its other two settings are brightness and speed), so it can't show a
+theme's own colours together. It can't flash with each beat: unlike the keys, the strip has no
 live colour channel, only a saved setting, and saving many times a second would
 wear out the keyboard's memory. Turn this off with **Strip matches colours**;
 then **Fn + Shift** on the keyboard picks the strip's style yourself.
@@ -528,8 +530,9 @@ The app is careful because it writes to the keyboard's memory:
 - **The light strip only changes when you pick a mood or start music.** It
   isn't part of the live colour channel, so it can't move with the beat.
   (Found by testing: settings byte 0x1c is the strip's style, which Fn + Shift
-  steps through: 0 off, 1 and 2 colour-changing gradients, 3 steady, 4
-  blinking; 5 and up show steady red. Byte 0x1d is its colour. AULA's own
+  steps through: 0 off, 1 and 2 rainbow gradients, 3 steady, 4 blinking; 5
+  and up show steady red. Byte 0x1d is its colour, 0x1e its brightness (0 is
+  off) and 0x1f its speed. AULA's own
   Windows app doesn't control the strip at all.)
 - **Keyboard effects use the keyboard's colours.** The keyboard's own 18 effects
   only take its 7 colours plus "colourful". Live effects and music use any

@@ -101,7 +101,8 @@ struct ConfigPage: Equatable {
     ///   steady red, so they aren't used.
     /// - 0x1d colour, same numbering as the keys (0 red, 1 green, …): writing
     ///   1 turned the static red strip green.
-    /// - 0x1e, 0x1f: probably brightness and speed; unconfirmed, never written.
+    /// - 0x1e brightness (0 is off), 0x1f speed (0 slowest); never written by
+    ///   the app. Neither limits the gradient's colours: it's always a rainbow.
     static let stripOffsets = 0x1c...0x1f
     static let stripModeOffset = 0x1c
     static let stripColorOffset = 0x1d
