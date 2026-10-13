@@ -133,6 +133,47 @@ for i in 0..<60 {
 }
 check(beats >= 4, "pulsed bass gives beats (\(beats))")
 
+// Columns: quiet treble under loud bass still reaches near full height
+// against its own peak, while the shared scale keeps it low.
+let mix = MusicAnalyzer()
+let bassAndHat = (0..<2048).map { i -> Float in
+    let t = Double(i) / 48_000
+    return Float(sin(2 * .pi * 60 * t) * 0.5 + sin(2 * .pi * 8_000 * t) * 0.01)
+}
+var mixed = mix.analyze(bassAndHat, sampleRate: 48_000)
+for _ in 0..<5 { mixed = mix.analyze(bassAndHat, sampleRate: 48_000) }
+let hat = 14 // the band holding 8 kHz
+check(mixed.columns[hat] > 0.8 && mixed.columns[hat] > mixed.bands[hat] + 0.2,
+      "treble column reaches full height: \(mixed.columns[hat]) vs \(mixed.bands[hat])")
+
+// The new styles: each one lights the board where it should.
+func lit(_ f: [UInt8], _ name: String) -> Int {
+    let led = F99.keys.first { $0.name == name }!.led
+    return Int(f[led * 3]) + Int(f[led * 3 + 1]) + Int(f[led * 3 + 2])
+}
+var bassOnly = MusicSnapshot(bands: (0..<16).map { $0 < 4 ? 1 : 0 }, level: 0.8, bass: 1, beat: false)
+bassOnly.columns = bassOnly.bands
+let mirror = MusicRenderer(); mirror.style = .mirror
+let mf = mirror.render(bassOnly)
+check(lit(mf, "J") > lit(mf, "LCtrl") && lit(mf, "J") > lit(mf, "Num3"), "mirror: bass lights the middle")
+let bars = MusicRenderer(); bars.style = .bars
+let bf = bars.render(bassOnly)
+check(lit(bf, "Space") > lit(bf, "F6"), "bars: bass lights the bottom row")
+let meter = MusicRenderer(); meter.style = .meter
+var half = bassOnly; half.level = 0.3; half.bass = 0.3
+var meterFrame: [UInt8] = []
+for _ in 0..<10 { meterFrame = meter.render(half) }
+check(lit(meterFrame, "Space") > lit(meterFrame, "F6"), "meter fills from the bottom")
+let scroll = MusicRenderer(); scroll.style = .scroll
+var sf: [UInt8] = []
+for i in 0..<30 {
+    var snap = bassOnly
+    if i < 25 { snap.columns = Array(repeating: 0, count: 16); snap.bands = snap.columns }
+    sf = scroll.render(snap)
+}
+check(lit(sf, "Num0") > lit(sf, "LCtrl"), "scroll: a new sound enters on the right")
+check(MusicStyle.offered.count <= 7, "short music style list")
+
 // Palettes: ends land on the first and last colours, wrapping loops back.
 let fire = MusicPalette.presets.first { $0.name == "Fire" }!
 check(fire.sample(0, wrap: false) == fire.colors.first!, "palette start")

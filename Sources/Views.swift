@@ -102,6 +102,7 @@ struct MoodButton: View {
     @EnvironmentObject var model: AppModel
     let mood: Mood
     var compact = false
+    @StateObject private var confirmDelete = ViewState(false)
 
     var body: some View {
         let active = model.settings.activeMoodID == mood.id
@@ -152,6 +153,22 @@ struct MoodButton: View {
         .help(mood.hotkey.map { "\(mood.name) (\($0.display))" } ?? mood.name)
         .accessibilityLabel("\(mood.name)\(mood.live != nil ? ", live effect" : "")\(startup ? ", start-up mood" : "")")
         .accessibilityAddTraits(active ? .isSelected : [])
+        .contextMenu {
+            Button("Edit…") { model.editMoodRequest = mood.id }
+            Button("Duplicate") { model.duplicateMood(mood.id) }
+            if model.canRevert(mood) {
+                Button("Revert to original") { model.revert(mood.id) }
+            }
+            Divider()
+            Button("Delete…", role: .destructive) { confirmDelete.value = true }
+        }
+        .alert("Delete “\(mood.name)”?", isPresented: $confirmDelete.value) {
+            Button("Delete", role: .destructive) { model.deleteMood(mood.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(mood.builtIn != nil ? "Built-in moods can be put back later with “Restore built-in moods” in Moods."
+                                     : "This can't be undone.")
+        }
     }
 }
 
@@ -265,10 +282,17 @@ struct MoodsTab: View {
                             if mood.hidden {
                                 Image(systemName: "eye.slash").foregroundStyle(.secondary).accessibilityLabel("hidden")
                             }
-                        }.tag(mood.id)
+                        }
+                        .tag(mood.id)
+                        .contextMenu {
+                            Button("Duplicate") { if let copy = model.duplicateMood(mood.id) { selection.value = copy.id } }
+                            Divider()
+                            Button("Delete…", role: .destructive) { selection.value = mood.id; confirmDelete.value = true }
+                        }
                     }
                     .onMove { model.settings.moods.move(fromOffsets: $0, toOffset: $1) }
                 }
+                .onDeleteCommand { if selection.value != nil { confirmDelete.value = true } }
                 HStack(spacing: 0) {
                     ListButtons(add: {
                         let mood = Mood(name: "New mood", emoji: "",
@@ -307,8 +331,15 @@ struct MoodsTab: View {
             .frame(minWidth: 190, maxWidth: 250)
 
             Group {
-                if let i = model.settings.moods.firstIndex(where: { $0.id == selection.value }) {
-                    MoodEditor(mood: $model.settings.moods[i])
+                if let mood = selected {
+                    // Bound by id rather than index, so deleting a mood can't
+                    // leave the editor pointing at a position that's gone.
+                    MoodEditor(mood: Binding(
+                        get: { model.settings.moods.first { $0.id == mood.id } ?? mood },
+                        set: { new in
+                            if let i = model.settings.moods.firstIndex(where: { $0.id == new.id }) { model.settings.moods[i] = new }
+                        }), onDelete: { confirmDelete.value = true })
+                    .id(mood.id)
                 } else {
                     Text("Select a mood to edit it").foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -323,7 +354,8 @@ struct MoodsTab: View {
         .onChange(of: model.editMoodRequest) { _, id in
             if let id { selection.value = id; model.editMoodRequest = nil }
         }
-        .confirmationDialog("Delete \(selected.map { "“\($0.name)”" } ?? "this mood")?", isPresented: $confirmDelete.value) {
+        .alert("Delete \(selected.map { "“\($0.name)”" } ?? "this mood")?", isPresented: $confirmDelete.value) {
+            Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 guard let id = selection.value else { return }
                 let index = model.settings.moods.firstIndex { $0.id == id } ?? 0
@@ -332,7 +364,8 @@ struct MoodsTab: View {
                 selection.value = moods.isEmpty ? nil : moods[min(index, moods.count - 1)].id
             }
         } message: {
-            Text("Built-in moods can be put back later with “Restore built-in moods”.")
+            Text(selected?.builtIn != nil ? "Built-in moods can be put back later with “Restore built-in moods”."
+                                          : "This can't be undone.")
         }
         .alert(message.value ?? "", isPresented: Binding(get: { message.value != nil }, set: { if !$0 { message.value = nil } })) {
             Button("OK") { message.value = nil }
@@ -367,10 +400,23 @@ struct MoodsTab: View {
 struct MoodEditor: View {
     @EnvironmentObject var model: AppModel
     @Binding var mood: Mood
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
         let effect = F99.effect(mood.lighting.effect)
         Form {
+            if model.canRevert(mood) {
+                Section {
+                    HStack {
+                        Label(mood.changedFromBuiltIn ? "You've changed this built-in mood." : "You've remixed this mood's colours.",
+                              systemImage: "pencil.circle").foregroundStyle(.secondary)
+                        Spacer()
+                        Button { model.revert(mood.id) } label: {
+                            Label(mood.changedFromBuiltIn ? "Revert to original" : "Revert colours", systemImage: "arrow.uturn.backward")
+                        }
+                    }
+                }
+            }
             Section {
                 TextField("Name", text: $mood.name)
                 if mood.name.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -449,6 +495,10 @@ struct MoodEditor: View {
                     Button("Use this mood now") { model.apply(mood) }
                         .disabled(model.busy)
                     if !model.canWrite { Text("Shown on screen until the keyboard is connected by USB-C").font(.caption).foregroundStyle(.secondary) }
+                    if let onDelete {
+                        Spacer()
+                        Button("Delete mood…", role: .destructive, action: onDelete)
+                    }
                 }
             }
         }
@@ -745,7 +795,7 @@ struct MusicControls: View {
 
             if full {
                 Picker("Style", selection: Binding(get: { model.settings.musicStyle }, set: { model.setMusicStyle($0) })) {
-                    ForEach(MusicStyle.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(MusicStyle.shown(with: model.settings.musicStyle)) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()

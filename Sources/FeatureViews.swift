@@ -24,9 +24,11 @@ struct RemixBar: View {
                     Text("Remix").font(.subheadline.weight(.semibold))
                     Spacer(minLength: 4)
                     if changed {
-                        Button { model.revertRemix(mood.id) } label: { Label("Revert", systemImage: "arrow.uturn.backward") }
-                            .help("Put the mood's colours back")
-                        if !compact {
+                        // The main window has Revert above the keyboard.
+                        if compact {
+                            Button { model.revertRemix(mood.id) } label: { Label("Revert", systemImage: "arrow.uturn.backward") }
+                                .help("Put the mood's colours back")
+                        } else {
                             Button { model.saveRemix(mood.id) } label: { Label("Save as new mood", systemImage: "plus.square.on.square") }
                         }
                     }
@@ -176,13 +178,9 @@ struct PaintEditor: View {
                         let c = paint[key.led] ?? mood.paintBase
                         gc.fill(shape, with: .color(c.map { $0.color } ?? Color(white: 0.16)))
                         gc.stroke(shape, with: .color(.white.opacity(paint[key.led] != nil ? 0.35 : 0.12)), lineWidth: 0.8)
-                        let label = KeyboardPicture.label(key.name)
-                        if !label.isEmpty {
-                            let light = (c?.luminance ?? 0) > 0.6
-                            gc.draw(Text(label).font(.system(size: max(6, min(10, rect.height * 0.3)), weight: .medium))
-                                        .foregroundColor(light ? .black.opacity(0.7) : .white.opacity(0.75)),
-                                    at: CGPoint(x: rect.minX + 3 * scale, y: rect.minY + 3 * scale), anchor: .topLeading)
-                        }
+                        let light = (c?.luminance ?? 0) > 0.6
+                        KeyboardPicture.drawLabel(gc, key, in: rect, scale: scale,
+                                                  color: light ? .black.opacity(0.7) : .white.opacity(0.75))
                     }
                 }
                 .contentShape(Rectangle())
@@ -351,7 +349,7 @@ struct AlertsSection: View {
                     ForEach([1, 2, 5, 10, 15], id: \.self) { Text("\($0) minute\($0 == 1 ? "" : "s") before").tag($0) }
                 }
                 .disabled(!model.settings.calendarAlerts)
-                Toggle("Flash when new mail arrives in Mail", isOn: $model.settings.mailAlerts)
+                Toggle("Flash for new mail, Messages and Slack", isOn: $model.settings.mailAlerts)
                 if model.settings.mailAlerts && model.mailNotAllowed {
                     HStack {
                         Image(systemName: "hand.raised").foregroundStyle(.orange)

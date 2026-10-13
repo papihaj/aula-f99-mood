@@ -91,6 +91,9 @@ final class AppModel: ObservableObject {
     let calendar = CalendarWatcher()
     private let keySounds = KeySoundPlayer()
     private let mail = MailWatcher()
+    private let badges = BadgeWatcher()
+    /// When Messages or Slack last blinked the strip.
+    private var lastChatBlink: Date?
     /// An alert waiting on the light strip ("Standup at 10:00", "New mail").
     @Published private(set) var stripAlert: String?
     @Published private(set) var mailNotAllowed = false
@@ -134,8 +137,10 @@ final class AppModel: ObservableObject {
         watchSystem()
         nowPlaying.onChange = { [weak self] state in
             guard let self else { return }
-            self.songPlaying = state != nil
-            self.nowPlayingNotAllowed = self.nowPlaying.notAllowed
+            // Only publish real changes: every publish redraws the windows,
+            // and this runs every 2 seconds.
+            if self.songPlaying != (state != nil) { self.songPlaying = state != nil }
+            if self.nowPlayingNotAllowed != self.nowPlaying.notAllowed { self.nowPlayingNotAllowed = self.nowPlaying.notAllowed }
             let progress = state.map { ($0.position, $0.duration, $0.at) }
             let color = self.settings.nowPlayingColor
             self.queue.async {
@@ -146,6 +151,15 @@ final class AppModel: ObservableObject {
         mail.onNewMail = { [weak self] n in
             guard let self, self.settings.mailAlerts, !self.darkened else { return }
             self.raiseAlert(n == 1 ? "New mail" : "\(n) new emails", until: nil, mail: true)
+        }
+        badges.onNewMessages = { [weak self] app, n in
+            guard let self, self.settings.mailAlerts, !self.darkened else { return }
+            // Each blink saves the strip twice (on, then back), so a busy
+            // chat blinks at most once a minute.
+            if let last = self.lastChatBlink, Date().timeIntervalSince(last) < 60 { return }
+            self.lastChatBlink = Date()
+            self.raiseAlert(n == 1 ? "New message in \(app)" : "\(n) new messages in \(app)",
+                            until: Date().addingTimeInterval(4), mail: false, flashKeys: false)
         }
         updateExtras()
         // Put the lighting back if the app quits mid-song.
@@ -174,7 +188,7 @@ final class AppModel: ObservableObject {
         checkSchedule()
         if ticks % 20 == 0 { checkCalendar() }
         if let until = stripAlertUntil, Date() >= until { clearAlert() }
-        if ticks % 30 == 0 { mailNotAllowed = mail.notAllowed }
+        if ticks % 30 == 0, mailNotAllowed != mail.notAllowed { mailNotAllowed = mail.notAllowed }
         if needsAccessibility, AXIsProcessTrusted() {
             needsAccessibility = false
             updateKeyMonitor() // the old monitors were added before access
@@ -1291,7 +1305,7 @@ final class AppModel: ObservableObject {
     /// Start or stop the watchers the settings ask for.
     private func updateExtras() {
         if settings.nowPlayingBar { nowPlaying.start() } else { nowPlaying.stop() }
-        if settings.mailAlerts { mail.start() } else { mail.stop() }
+        if settings.mailAlerts { mail.start(); badges.start() } else { mail.stop(); badges.stop() }
         if settings.keySounds {
             do {
                 try keySounds.load(settings.keySound, file: settings.keySoundFile)
@@ -1318,13 +1332,26 @@ final class AppModel: ObservableObject {
 
     /// Flash the keyboard and, if allowed, turn the strip the alert colour
     /// until the alert is over or cleared.
-    func raiseAlert(_ text: String, until: Date?, mail: Bool) {
-        flash(color: settings.alertColor, times: settings.alertFlashes)
+    /// With `flashKeys` off only the strip blinks, unless strip alerts are
+    /// off, when the keys flash instead.
+    func raiseAlert(_ text: String, until: Date?, mail: Bool, flashKeys: Bool = true) {
+        if flashKeys || !settings.stripAlerts { flash(color: settings.alertColor, times: settings.alertFlashes) }
         guard settings.stripAlerts else { return }
-        if stripAlert == nil { stripBeforeAlert = page?.strip }
-        stripAlert = text
-        stripAlertUntil = until
-        stripAlertIsMail = mail
+        if stripAlert == nil {
+            stripBeforeAlert = page?.strip
+            stripAlertUntil = until
+            stripAlertIsMail = mail
+            stripAlert = text
+        } else {
+            // One alert is already waiting: keep whichever lasts longer
+            // (no end time means until it's cleared).
+            let lastsLonger = until == nil || stripAlertUntil.map { until! >= $0 } == true
+            if lastsLonger {
+                stripAlert = text
+                stripAlertUntil = until
+            }
+            stripAlertIsMail = stripAlertIsMail || mail
+        }
         let alert = ConfigPage.Strip.blinking(settings.stripAlertColor)
         if canWrite, page?.shows(alert) != true { perform { try $0.setStrip(alert) } }
     }
@@ -1394,6 +1421,22 @@ final class AppModel: ObservableObject {
         m.paintBase = original.paintBase
         settings.moods[i] = m
         remixOriginals[id] = nil
+    }
+
+    /// Whether a mood has something to undo: a remix, or changes to a
+    /// built-in mood.
+    func canRevert(_ mood: Mood) -> Bool { remixOriginals[mood.id] != nil || mood.changedFromBuiltIn }
+
+    /// Undo changes to a mood: a built-in mood goes back to how it came,
+    /// any other mood loses its remix.
+    func revert(_ id: UUID) {
+        guard let i = settings.moods.firstIndex(where: { $0.id == id }) else { return }
+        if settings.moods[i].changedFromBuiltIn {
+            remixOriginals[id] = nil
+            settings.moods[i] = settings.moods[i].revertedToBuiltIn()
+        } else {
+            revertRemix(id)
+        }
     }
 
     /// Keep the remix as a new mood and put the original back as it was.

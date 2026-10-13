@@ -101,6 +101,27 @@ struct Mood: Codable, Identifiable, Hashable {
         m.apps = []
         return m
     }
+
+    /// The built-in mood this one is (matched by name), if any.
+    var builtIn: Mood? { AppSettings.builtInMoods.first { $0.name == name } }
+
+    /// Whether this is a built-in mood whose look has been changed.
+    var changedFromBuiltIn: Bool {
+        guard let b = builtIn else { return false }
+        return lighting != b.lighting || live != b.live || paletteName != b.paletteName
+            || paint != b.paint || paintBase != b.paintBase || symbol != b.symbol || emoji != b.emoji
+    }
+
+    /// The built-in mood's look back, keeping this mood's id, shortcut,
+    /// apps and whether it's shown.
+    func revertedToBuiltIn() -> Mood {
+        guard var m = builtIn else { return self }
+        m.id = id
+        m.hotkey = hotkey
+        m.apps = apps
+        m.hidden = hidden
+        return m
+    }
 }
 
 /// Skips list entries that fail to decode, instead of failing the list.
@@ -297,7 +318,8 @@ struct AppSettings: Codable {
     var alertMinutesBefore = 5
     var alertColor = RGB(hex: 0xffb300)
     var alertFlashes = 3
-    /// Flash for new messages in Mail.
+    /// Flash for new messages in Mail, and blink the strip for new
+    /// messages in Messages and Slack.
     var mailAlerts = false
     /// Turn the light strip a colour while an alert is waiting (one saved
     /// change per alert, so it doesn't wear the keyboard's memory).

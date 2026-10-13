@@ -23,6 +23,15 @@ struct MainView: View {
                     .background(Capsule().fill(Color.pink.opacity(0.12)))
                 }
                 Spacer()
+                // Undo for the mood that's on, right above the keyboard.
+                if let mood = model.activeMood, !model.musicOn, model.canRevert(mood) {
+                    Button { model.revert(mood.id) } label: {
+                        Label(mood.changedFromBuiltIn ? "Revert \(mood.name) to original" : "Revert colours",
+                              systemImage: "arrow.uturn.backward")
+                    }
+                    .controlSize(.small)
+                    .help("Undo your changes to this mood")
+                }
             }
 
             Card(padding: 12) {
@@ -141,13 +150,7 @@ struct KeyboardPicture: View {
                     let rect = F99.keyRect(key, scale)
                     gc.stroke(RoundedRectangle(cornerRadius: 4 * scale).path(in: rect),
                               with: .color(.black.opacity(0.18)), lineWidth: 0.8)
-                    let label = Self.label(key.name)
-                    if !label.isEmpty {
-                        let font = Font.system(size: max(6, min(11, rect.height * 0.32)), weight: .medium)
-                        gc.draw(Text(label).font(font).foregroundColor(.black.opacity(0.75)),
-                                at: CGPoint(x: rect.minX + 3 * scale, y: rect.minY + 3 * scale),
-                                anchor: .topLeading)
-                    }
+                    Self.drawLabel(gc, key, in: rect, scale: scale, color: .black.opacity(0.75))
                 }
             }
             .allowsHitTesting(false)
@@ -204,30 +207,59 @@ struct KeyboardPicture: View {
         return LightingSimulator.color(for: key, lighting: l, time: time)
     }
 
-    static func label(_ name: String) -> String {
+    /// Draw a key's legend in its top-left corner: the longest version
+    /// that fits on the key, else the shortest one, shrunk to fit.
+    static func drawLabel(_ gc: GraphicsContext, _ key: F99.Key, in rect: CGRect, scale: Double, color: Color) {
+        let options = labels(key.name)
+        guard !options.isEmpty else { return }
+        let inset = 3 * scale
+        let room = CGSize(width: rect.width - 2 * inset, height: rect.height - 2 * inset)
+        var size = max(6, min(11, rect.height * 0.32))
+        func resolved(_ text: String) -> GraphicsContext.ResolvedText {
+            gc.resolve(Text(text).font(.system(size: size, weight: .medium)).foregroundColor(color))
+        }
+        // Measured without a limit: a limited measure wraps to fit and hides
+        // the overflow.
+        let unlimited = CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        var text = options.lazy.map(resolved).first { $0.measure(in: unlimited).width <= room.width }
+        if text == nil, let shortest = options.last {
+            let width = resolved(shortest).measure(in: unlimited).width
+            if width > 0 { size = max(5, size * room.width / width) }
+            text = resolved(shortest)
+        }
+        if let text { gc.draw(text, at: CGPoint(x: rect.minX + inset, y: rect.minY + inset), anchor: .topLeading) }
+    }
+
+    /// A key's legends as printed on a Mac keyboard, longest first.
+    static func labels(_ name: String) -> [String] {
         switch name {
-        case "Backspace": return "⌫"
-        case "Delete": return "Del"
-        case "NumLock": return "Num"
-        case "Tab": return "⇥"
-        case "CapsLock": return "Caps"
-        case "Enter": return "⏎"
-        case "LShift", "RShift": return "⇧"
-        case "LCtrl", "RCtrl": return "Ctrl"
-        case "LWin": return "Win"
-        case "LAlt", "RAlt": return "Alt"
-        case "FN": return "Fn"
-        case "Space": return ""
-        case "Up": return "↑"
-        case "Down": return "↓"
-        case "Left": return "←"
-        case "Right": return "→"
-        case "PgUp": return "PgUp"
-        case "PgDn": return "PgDn"
+        case "Esc": return ["esc"]
+        case "Backspace": return ["⌫ delete", "⌫"]
+        case "Delete": return ["⌦"]
+        case "NumLock": return ["clear", "⌧"]
+        case "Tab": return ["⇥ tab", "⇥"]
+        case "CapsLock": return ["⇪ caps lock", "⇪"]
+        case "Enter": return ["⏎ return", "⏎"]
+        case "LShift", "RShift": return ["⇧ shift", "⇧"]
+        // Modifiers sit where they do on an Apple keyboard: control, option,
+        // command on the left; command, fn, option on the right.
+        case "LCtrl": return ["⌃ control", "⌃"]
+        case "LWin", "RCtrl": return ["⌥ option", "⌥"]
+        case "LAlt", "RAlt": return ["⌘ command", "⌘"]
+        case "FN": return ["fn"]
+        case "Space": return []
+        case "Up": return ["▲"]
+        case "Down": return ["▼"]
+        case "Left": return ["◀"]
+        case "Right": return ["▶"]
+        case "Home": return ["home"]
+        case "End": return ["end"]
+        case "PgUp": return ["pg up", "pg↑"]
+        case "PgDn": return ["pg dn", "pg↓"]
         default:
-            if name.hasPrefix("Num ") { return String(name.dropFirst(4)) }
-            if name.hasPrefix("Num") { return String(name.dropFirst(3)) }
-            return name
+            if name.hasPrefix("Num ") { return [String(name.dropFirst(4))] }
+            if name.hasPrefix("Num") { return [String(name.dropFirst(3))] }
+            return [name]
         }
     }
 }

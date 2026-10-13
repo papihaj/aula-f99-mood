@@ -15,15 +15,32 @@ import Foundation
 
 enum MusicStyle: String, Codable, CaseIterable, Identifiable {
     case spectrum = "Spectrum"
+    case mirror = "Mirror"
+    case bars = "Bars"
+    case meter = "Meter"
+    case scroll = "Scroll"
     case pulse = "Pulse"
     case ripples = "Ripples"
     case wave = "Wave"
     case fireworks = "Fireworks"
     var id: String { rawValue }
 
+    /// The styles the app offers. Pulse and Fireworks react only to beats,
+    /// so they look like random pulsing; they still work if already chosen.
+    static let offered: [MusicStyle] = [.spectrum, .mirror, .bars, .meter, .scroll, .ripples, .wave]
+
+    /// The offered styles, plus `current` if it's a retired one still in use.
+    static func shown(with current: MusicStyle) -> [MusicStyle] {
+        offered.contains(current) ? offered : offered + [current]
+    }
+
     var summary: String {
         switch self {
         case .spectrum: return "Bass on the left, treble on the right, bouncing like an equaliser"
+        case .mirror: return "An equaliser with the bass in the middle and the treble out to both edges"
+        case .bars: return "Each row is a pitch, bass at the bottom: bars grow across the rows with the sound"
+        case .meter: return "The whole keyboard fills from the bottom up with how loud it is"
+        case .scroll: return "The sound scrolls across the keyboard from right to left, bass low, treble high"
         case .pulse: return "The whole keyboard breathes with the bass and sparks on big beats"
         case .ripples: return "Each beat sends a soft ring of colour across the keys"
         case .wave: return "Colour flows outward from the middle of the keyboard, in time with the music"
@@ -64,6 +81,10 @@ struct MusicSnapshot {
     var beatPhase: Float = 0
     /// Which beat of a four-beat bar this is (0-3).
     var barBeat: Int = 0
+    /// The 16 bands again, each against its own recent peak rather than the
+    /// loudest band, so treble can reach full height like the bass (the way
+    /// Razer's and OpenRGB's visualisers do). Empty means use `bands`.
+    var columns: [Float] = []
 }
 
 /// Turns raw samples into frequency bands, loudness and beats.
@@ -80,6 +101,9 @@ final class MusicAnalyzer {
     private var lastTime: Double = 0
 
     private var smoothed = [Float](repeating: 0, count: bandCount)
+    private var columns = [Float](repeating: 0, count: bandCount)
+    /// Each band's own slowly falling peak, in dB.
+    private var bandPeakDB = [Float](repeating: -60, count: bandCount)
     private var previousDB = [Float](repeating: -120, count: bandCount)
     private var peakDB: Float = -30
     /// The loudest the music has been for a while; caps how far the
@@ -136,7 +160,7 @@ final class MusicAnalyzer {
         guard gateOpen else {
             // Silence: let everything fade over a second or so, and freeze the
             // automatic gain so it doesn't crank up the background hiss.
-            for b in 0..<Self.bandCount { smoothed[b] *= keep(0.6) }
+            for b in 0..<Self.bandCount { smoothed[b] *= keep(0.6); columns[b] *= keep(0.6) }
             bassEnv *= keep(0.6)
             // Silence has no onsets; and when the music comes back, its first
             // hit should count as one.
@@ -145,7 +169,8 @@ final class MusicAnalyzer {
             previousDB = [Float](repeating: -120, count: Self.bandCount)
             return MusicSnapshot(bands: smoothed, level: 0, bass: bassEnv, beat: false,
                                  strength: 0, intensity: 0.3, silent: true,
-                                 bpm: tempoKnown ? Float(60 / period) : 0, beatPhase: Float(beatPhase), barBeat: beatCount % 4)
+                                 bpm: tempoKnown ? Float(60 / period) : 0, beatPhase: Float(beatPhase), barBeat: beatCount % 4,
+                                 columns: columns)
         }
 
         let mags = spectrum(samples)
@@ -195,6 +220,14 @@ final class MusicAnalyzer {
             x = x * x * 0.4 + x * 0.6 // a touch of contrast so bars don't all sit high
             // Jump up at once, fall back over about a quarter of a second.
             smoothed[b] = x > smoothed[b] ? x : smoothed[b] * keep(0.25) + x * (1 - keep(0.25))
+
+            // Against the band's own peak, which falls 4 dB a second. It never
+            // sits more than 30 dB under the loudest band, so a nearly silent
+            // band (noise) isn't turned up to full height.
+            bandPeakDB[b] = max(db[b], bandPeakDB[b] - 4 * dt, peakDB - 30)
+            var own = min(max((db[b] - (bandPeakDB[b] - 24)) / 24, 0), 1)
+            own = own * own * 0.4 + own * 0.6
+            columns[b] = own > columns[b] ? own : columns[b] * keep(0.25) + own * (1 - keep(0.25))
         }
 
         levelPeak = max(rms, levelPeak * keep(10), 0.01)
@@ -226,7 +259,8 @@ final class MusicAnalyzer {
         return MusicSnapshot(bands: smoothed, level: level, bass: bassEnv, beat: beat,
                              strength: strength, intensity: intensity, silent: false,
                              brightness: total > 0 ? min(weightedSum / total / Float(Self.bandCount - 1), 1) : 0.5,
-                             bpm: tempoKnown ? Float(60 / period) : 0, beatPhase: Float(beatPhase), barBeat: beatCount % 4)
+                             bpm: tempoKnown ? Float(60 / period) : 0, beatPhase: Float(beatPhase), barBeat: beatCount % 4,
+                             columns: columns)
     }
 
     // MARK: Tempo
@@ -468,6 +502,12 @@ final class MusicRenderer {
     private var sparks: [(x: Double, y: Double, born: Date, color: RGB, strength: Double, life: Double)] = []
     /// Wave: colours injected at the centre, newest first.
     private var wave: [(RGB, Double)] = []
+    /// Meter: the level shown, and a peak line that falls slowly.
+    private var meterLevel = 0.0
+    private var meterPeak = 0.0
+    /// Scroll: one column of row levels per frame, newest first.
+    private var history: [[Double]] = []
+    static let rows = 6
     private var previous: [Double] = []
 
     /// R, G, B for every LED slot, ready for `Keyboard.stream`.
@@ -548,6 +588,19 @@ final class MusicRenderer {
             if sparks.count > 40 { sparks.removeFirst(sparks.count - 40) }
         }
 
+        let cols = m.columns.count == MusicAnalyzer.bandCount ? m.columns : m.bands
+        if style == .meter {
+            // Up at once, down over about a third of a second; the peak line
+            // holds, then drops.
+            let target = m.silent ? 0 : min(Double(m.level) * 0.7 + Double(m.bass) * 0.3 + 0.15 * flash, 1)
+            meterLevel = target > meterLevel ? target : meterLevel * 0.85 + target * 0.15
+            meterPeak = max(meterLevel, meterPeak - 0.02)
+        }
+        if style == .scroll {
+            history.insert((0..<Self.rows).map { Double(Self.rowLevel($0, cols)) }, at: 0)
+            if history.count > 40 { history.removeLast() }
+        }
+
         if style == .wave {
             // Inject a colour picked by how bright the sound is, with a
             // brightness from the bass and the hits, then let it travel out.
@@ -561,16 +614,58 @@ final class MusicRenderer {
         }
     }
 
+    /// The level for one keyboard row (0 = bottom), from the bands that row
+    /// covers: bass on the bottom row, treble on the top.
+    static func rowLevel(_ row: Int, _ cols: [Float]) -> Float {
+        let n = MusicAnalyzer.bandCount
+        let lo = row * n / rows, hi = max(lo + 1, (row + 1) * n / rows)
+        return cols[lo..<min(hi, n)].max() ?? 0
+    }
+
+    /// Which row a key is on, 0 for the bottom row up to 5 for the F keys.
+    static func row(_ key: F99.Key) -> Int { min(max(Int(((1 - key.y) * Double(rows - 1)).rounded()), 0), rows - 1) }
+
     private func color(for key: F99.Key, _ m: MusicSnapshot, _ now: Date) -> (RGB, Double) {
+        let cols = m.columns.count == MusicAnalyzer.bandCount ? m.columns : m.bands
+        let height = 1 - key.y // 0 = bottom row, 1 = top row
+        // A column of light rising from the bottom row to `level`, coloured
+        // from the bottom of the palette to the top, on a dark floor.
+        func column(_ level: Double) -> (RGB, Double) {
+            let lit = min(max((level * 1.1 - height) * 4, 0), 1)
+            return (palette.sample(height, wrap: false), 0.03 + 0.97 * lit)
+        }
         switch style {
         case .spectrum:
             let band = min(Int(key.x * Double(MusicAnalyzer.bandCount)), MusicAnalyzer.bandCount - 1)
-            let height = 1 - key.y // 0 = bottom row, 1 = top row
-            let level = Double(m.bands[band])
-            let lit = min(max((level * 1.1 - height) * 4, 0), 1)
-            // Palette from the bottom row to the top, like a level meter, on a
-            // dark floor so the peaks stand out.
+            return column(Double(cols[band]))
+
+        case .mirror:
+            // Bass in the middle, treble at both ends.
+            let d = abs(key.x - 0.5) * 2
+            let band = min(Int(d * Double(MusicAnalyzer.bandCount)), MusicAnalyzer.bandCount - 1)
+            return column(Double(cols[band]))
+
+        case .bars:
+            // Each row's bar grows out from the middle to both ends.
+            let level = Double(Self.rowLevel(Self.row(key), cols))
+            let reach = abs(key.x - 0.5) * 2
+            let lit = min(max((level * 1.1 - reach) * 5, 0), 1)
+            return (palette.sample(reach * 0.8 + Double(Self.row(key)) * 0.04, wrap: false), 0.03 + 0.97 * lit)
+
+        case .meter:
+            // Fill from the bottom; the peak line sits on top in the accent.
+            let lit = min(max((meterLevel * 1.05 - height) * 5, 0), 1)
+            let peakRow = abs(height - meterPeak) < 0.11 && meterPeak > 0.15
+            if peakRow && lit < 0.5 { return (palette.accent, 0.7) }
             return (palette.sample(height, wrap: false), 0.03 + 0.97 * lit)
+
+        case .scroll:
+            // Newest on the right, moving left about a key every frame.
+            guard !history.isEmpty else { return (palette.sample(phase, wrap: true), 0.03) }
+            let age = min(Int((1 - key.x) * 19), history.count - 1)
+            let v = history[age][Self.row(key)]
+            return (palette.sample(Double(Self.row(key)) / Double(Self.rows - 1) * 0.8 + v * 0.2, wrap: false),
+                    0.03 + 0.97 * v * v)
 
         case .pulse:
             // Brightness follows the bass; colour drifts slowly across the board.

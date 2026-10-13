@@ -25,6 +25,8 @@ final class NowPlayingWatcher {
     private(set) var notAllowed = false
     var onChange: ((State?) -> Void)?
     private var timer: Timer?
+    /// Each player's script, compiled once rather than on every poll.
+    private var compiled: [String: NSAppleScript] = [:]
 
     private static let players: [(bundle: String, script: String)] = [
         ("com.spotify.client", """
@@ -63,7 +65,10 @@ final class NowPlayingWatcher {
         var found: State?
         for player in Self.players where !NSRunningApplication.runningApplications(withBundleIdentifier: player.bundle).isEmpty {
             var error: NSDictionary?
-            let result = NSAppleScript(source: player.script)?.executeAndReturnError(&error)
+            if compiled[player.bundle] == nil, let script = NSAppleScript(source: player.script), script.compileAndReturnError(nil) {
+                compiled[player.bundle] = script
+            }
+            let result = compiled[player.bundle]?.executeAndReturnError(&error)
             if let code = error?[NSAppleScript.errorNumber] as? Int, code == -1743 { notAllowed = true; continue }
             guard let text = result?.stringValue, !text.isEmpty else { continue }
             let parts = text.split(separator: "|").compactMap { Double($0) }
@@ -88,6 +93,11 @@ final class MailWatcher {
     private(set) var notAllowed = false
     private var timer: Timer?
     private var lastCount: Int?
+    private lazy var script: NSAppleScript? = {
+        let script = NSAppleScript(source: #"tell application id "com.apple.mail" to return unread count of inbox"#)
+        _ = script?.compileAndReturnError(nil)
+        return script
+    }()
 
     func start() {
         guard timer == nil else { return }
@@ -106,13 +116,67 @@ final class MailWatcher {
     private func poll() {
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").isEmpty else { return }
         var error: NSDictionary?
-        let result = NSAppleScript(source: #"tell application id "com.apple.mail" to return unread count of inbox"#)?
-            .executeAndReturnError(&error)
+        let result = script?.executeAndReturnError(&error)
         if let code = error?[NSAppleScript.errorNumber] as? Int, code == -1743 { notAllowed = true; return }
         guard let count = result.map({ Int($0.int32Value) }) else { return }
         notAllowed = false
         if let last = lastCount, count > last { onNewMail?(count - last) }
         lastCount = count
+    }
+}
+
+// MARK: Dock badges
+
+/// The number on Messages' and Slack's Dock icons, read every 3 seconds
+/// from Launch Services (no permission needed, nothing is opened). Calls
+/// back when a number goes up.
+@MainActor
+final class BadgeWatcher {
+    static let apps = ["com.apple.MobileSMS": "Messages", "com.tinyspeck.slackmacgap": "Slack"]
+
+    var onNewMessages: ((_ app: String, _ count: Int) -> Void)?
+    private var timer: Timer?
+    private var lastCounts: [String: Int] = [:]
+
+    private typealias CreateASN = @convention(c) (CFAllocator?, pid_t) -> Unmanaged<CFTypeRef>?
+    private typealias CopyItem = @convention(c) (Int32, CFTypeRef, CFString) -> Unmanaged<CFTypeRef>?
+    // Private Launch Services calls, the same ones `lsappinfo` uses. Looked
+    // up at run time, so if a macOS update removes them, badges just stop.
+    private static let launchServices = dlopen("/System/Library/Frameworks/CoreServices.framework/CoreServices", RTLD_LAZY)
+    private static let createASN = dlsym(launchServices, "_LSASNCreateWithPid").map { unsafeBitCast($0, to: CreateASN.self) }
+    private static let copyItem = dlsym(launchServices, "_LSCopyApplicationInformationItem").map { unsafeBitCast($0, to: CopyItem.self) }
+
+    func start() {
+        guard timer == nil else { return }
+        poll()
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.poll() }
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        lastCounts = [:]
+    }
+
+    /// The number on an app's Dock icon; 0 for none or a dot.
+    static func badge(_ app: NSRunningApplication) -> Int? {
+        guard let createASN, let copyItem,
+              let asn = createASN(nil, app.processIdentifier)?.takeRetainedValue(),
+              let info = copyItem(-2, asn, "StatusLabel" as CFString)?.takeRetainedValue()
+        else { return 0 }
+        return ((info as? [String: Any])?["label"] as? String).flatMap { Int($0) } ?? 0
+    }
+
+    private func poll() {
+        for (bundleID, name) in Self.apps {
+            // Starting the app sets the count to compare with, without an alert.
+            guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
+                  let count = Self.badge(app) else { lastCounts[bundleID] = nil; continue }
+            if let last = lastCounts[bundleID], count > last { onNewMessages?(name, count - last) }
+            lastCounts[bundleID] = count
+        }
     }
 }
 
