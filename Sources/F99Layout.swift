@@ -18,10 +18,15 @@ extension F99 {
     /// One key unit (a letter key plus the gap after it), in pixels.
     static let unit = 32.5
     /// The space between neighbouring keys, in pixels.
-    static let keyGap = 4.0
+    static let keyGap = 3.0
 
     /// Bounds of all key frames, in the same pixels.
-    static let boardSize = (w: 19.4 * unit - keyGap, h: 6.55 * unit - keyGap)
+    static let boardSize = (w: 19.25 * unit - keyGap, h: 6.5 * unit - keyGap)
+
+    /// The light strip: a thin slot between Backspace and the number pad,
+    /// from halfway down Delete to the bottom of the Backspace row (measured
+    /// from a top-down photo of the F99).
+    static let stripFrame = (x: 15.125 * unit - 2.5, y: 0.6 * unit, w: 5.0, h: 1.55 * unit)
 
     /// A key's outline from its place on the grid: left edge and top in
     /// units, and its width and height in units.
@@ -57,12 +62,12 @@ extension F99 {
         Key(name: "-", x: 0.597, y: 0.250, led: 67, frame: grid(11, 1.35, 1, 1)),
         Key(name: "=", x: 0.652, y: 0.250, led: 73, frame: grid(12, 1.35, 1, 1)),
         Key(name: "Backspace", x: 0.732, y: 0.250, led: 79, frame: grid(13, 1.35, 2, 1)),
-        Key(name: "Delete", x: 0.759, y: 0.000, led: 78, frame: grid(14, 0, 1, 1)),
-        Key(name: "Home", x: 0.839, y: 0.006, led: 90, frame: grid(15.4, 0, 1, 1)),
-        Key(name: "NumLock", x: 0.838, y: 0.244, led: 91, frame: grid(15.4, 1.35, 1, 1)),
-        Key(name: "Num /", x: 0.891, y: 0.244, led: 97, frame: grid(16.4, 1.35, 1, 1)),
-        Key(name: "Num*", x: 0.946, y: 0.244, led: 103, frame: grid(17.4, 1.35, 1, 1)),
-        Key(name: "Num-", x: 1.000, y: 0.244, led: 109, frame: grid(18.4, 1.35, 1, 1)),
+        Key(name: "Delete", x: 0.759, y: 0.000, led: 78, frame: grid(13.875, 0, 1, 1)),
+        Key(name: "Home", x: 0.839, y: 0.006, led: 90, frame: grid(15.25, 0, 1, 1)),
+        Key(name: "NumLock", x: 0.838, y: 0.244, led: 91, frame: grid(15.25, 1.35, 1, 1)),
+        Key(name: "Num /", x: 0.891, y: 0.244, led: 97, frame: grid(16.25, 1.35, 1, 1)),
+        Key(name: "Num*", x: 0.946, y: 0.244, led: 103, frame: grid(17.25, 1.35, 1, 1)),
+        Key(name: "Num-", x: 1.000, y: 0.244, led: 109, frame: grid(18.25, 1.35, 1, 1)),
         Key(name: "Tab", x: 0.015, y: 0.433, led: 2, frame: grid(0, 2.35, 1.5, 1)),
         Key(name: "Q", x: 0.082, y: 0.433, led: 8, frame: grid(1.5, 2.35, 1, 1)),
         Key(name: "W", x: 0.137, y: 0.433, led: 14, frame: grid(2.5, 2.35, 1, 1)),
@@ -77,12 +82,12 @@ extension F99 {
         Key(name: "[", x: 0.624, y: 0.433, led: 68, frame: grid(11.5, 2.35, 1, 1)),
         Key(name: "]", x: 0.679, y: 0.433, led: 74, frame: grid(12.5, 2.35, 1, 1)),
         Key(name: "\\", x: 0.746, y: 0.433, led: 80, frame: grid(13.5, 2.35, 1.5, 1)),
-        Key(name: "End", x: 0.893, y: 0.006, led: 96, frame: grid(16.4, 0, 1, 1)),
-        Key(name: "PgUp", x: 0.948, y: 0.006, led: 102, frame: grid(17.4, 0, 1, 1)),
-        Key(name: "Num7", x: 0.838, y: 0.433, led: 92, frame: grid(15.4, 2.35, 1, 1)),
-        Key(name: "Num8", x: 0.893, y: 0.433, led: 98, frame: grid(16.4, 2.35, 1, 1)),
-        Key(name: "Num9", x: 0.946, y: 0.433, led: 104, frame: grid(17.4, 2.35, 1, 1)),
-        Key(name: "Num+", x: 1.000, y: 0.522, led: 110, frame: grid(18.4, 2.35, 1, 2)),
+        Key(name: "End", x: 0.893, y: 0.006, led: 96, frame: grid(16.25, 0, 1, 1)),
+        Key(name: "PgUp", x: 0.948, y: 0.006, led: 102, frame: grid(17.25, 0, 1, 1)),
+        Key(name: "Num7", x: 0.838, y: 0.433, led: 92, frame: grid(15.25, 2.35, 1, 1)),
+        Key(name: "Num8", x: 0.893, y: 0.433, led: 98, frame: grid(16.25, 2.35, 1, 1)),
+        Key(name: "Num9", x: 0.946, y: 0.433, led: 104, frame: grid(17.25, 2.35, 1, 1)),
+        Key(name: "Num+", x: 1.000, y: 0.522, led: 110, frame: grid(18.25, 2.35, 1, 2)),
         Key(name: "CapsLock", x: 0.022, y: 0.606, led: 3, frame: grid(0, 3.35, 1.75, 1)),
         Key(name: "A", x: 0.095, y: 0.606, led: 9, frame: grid(1.75, 3.35, 1, 1)),
         Key(name: "S", x: 0.149, y: 0.606, led: 15, frame: grid(2.75, 3.35, 1, 1)),
@@ -96,9 +101,9 @@ extension F99 {
         Key(name: ";", x: 0.584, y: 0.606, led: 63, frame: grid(10.75, 3.35, 1, 1)),
         Key(name: "'", x: 0.637, y: 0.606, led: 69, frame: grid(11.75, 3.35, 1, 1)),
         Key(name: "Enter", x: 0.726, y: 0.606, led: 81, frame: grid(12.75, 3.35, 2.25, 1)),
-        Key(name: "Num4", x: 0.838, y: 0.606, led: 93, frame: grid(15.4, 3.35, 1, 1)),
-        Key(name: "Num5", x: 0.893, y: 0.606, led: 99, frame: grid(16.4, 3.35, 1, 1)),
-        Key(name: "Num6", x: 0.946, y: 0.606, led: 105, frame: grid(17.4, 3.35, 1, 1)),
+        Key(name: "Num4", x: 0.838, y: 0.606, led: 93, frame: grid(15.25, 3.35, 1, 1)),
+        Key(name: "Num5", x: 0.893, y: 0.606, led: 99, frame: grid(16.25, 3.35, 1, 1)),
+        Key(name: "Num6", x: 0.946, y: 0.606, led: 105, frame: grid(17.25, 3.35, 1, 1)),
         Key(name: "LShift", x: 0.035, y: 0.783, led: 4, frame: grid(0, 4.35, 2.25, 1)),
         Key(name: "Z", x: 0.124, y: 0.783, led: 10, frame: grid(2.25, 4.35, 1, 1)),
         Key(name: "X", x: 0.177, y: 0.783, led: 16, frame: grid(3.25, 4.35, 1, 1)),
@@ -111,10 +116,10 @@ extension F99 {
         Key(name: ".", x: 0.557, y: 0.783, led: 58, frame: grid(10.25, 4.35, 1, 1)),
         Key(name: "/", x: 0.610, y: 0.783, led: 64, frame: grid(11.25, 4.35, 1, 1)),
         Key(name: "RShift", x: 0.684, y: 0.789, led: 82, frame: grid(12.25, 4.35, 1.75, 1)),
-        Key(name: "Up", x: 0.773, y: 0.817, led: 88, frame: grid(14.2, 4.55, 1, 1)),
-        Key(name: "Num1", x: 0.839, y: 0.783, led: 94, frame: grid(15.4, 4.35, 1, 1)),
-        Key(name: "Num2", x: 0.893, y: 0.783, led: 100, frame: grid(16.4, 4.35, 1, 1)),
-        Key(name: "Num3", x: 0.948, y: 0.783, led: 106, frame: grid(17.4, 4.35, 1, 1)),
+        Key(name: "Up", x: 0.773, y: 0.817, led: 88, frame: grid(14.1, 4.5, 1, 1)),
+        Key(name: "Num1", x: 0.839, y: 0.783, led: 94, frame: grid(15.25, 4.35, 1, 1)),
+        Key(name: "Num2", x: 0.893, y: 0.783, led: 100, frame: grid(16.25, 4.35, 1, 1)),
+        Key(name: "Num3", x: 0.948, y: 0.783, led: 106, frame: grid(17.25, 4.35, 1, 1)),
         Key(name: "LCtrl", x: 0.008, y: 0.967, led: 5, frame: grid(0, 5.35, 1.25, 1)),
         Key(name: "LWin", x: 0.077, y: 0.972, led: 11, frame: grid(1.25, 5.35, 1.25, 1)),
         Key(name: "LAlt", x: 0.144, y: 0.967, led: 17, frame: grid(2.5, 5.35, 1.25, 1)),
@@ -122,12 +127,12 @@ extension F99 {
         Key(name: "RAlt", x: 0.545, y: 0.961, led: 53, frame: grid(10, 5.35, 1, 1)),
         Key(name: "FN", x: 0.599, y: 0.961, led: 59, frame: grid(11, 5.35, 1, 1)),
         Key(name: "RCtrl", x: 0.652, y: 0.961, led: 65, frame: grid(12, 5.35, 1, 1)),
-        Key(name: "Left", x: 0.717, y: 0.994, led: 83, frame: grid(13.2, 5.55, 1, 1)),
-        Key(name: "Down", x: 0.773, y: 0.994, led: 89, frame: grid(14.2, 5.55, 1, 1)),
-        Key(name: "Right", x: 0.826, y: 1.000, led: 95, frame: grid(15.2, 5.55, 1, 1)),
-        Key(name: "Num0", x: 0.893, y: 0.961, led: 101, frame: grid(16.4, 5.35, 1, 1)),
-        Key(name: "Num .", x: 0.946, y: 0.961, led: 107, frame: grid(17.4, 5.35, 1, 1)),
-        Key(name: "Enter", x: 1.000, y: 0.881, led: 112, frame: grid(18.4, 4.35, 1, 2)),
-        Key(name: "PgDn", x: 1.000, y: 0.000, led: 108, frame: grid(18.4, 0, 1, 1)),
+        Key(name: "Left", x: 0.717, y: 0.994, led: 83, frame: grid(13.1, 5.5, 1, 1)),
+        Key(name: "Down", x: 0.773, y: 0.994, led: 89, frame: grid(14.1, 5.5, 1, 1)),
+        Key(name: "Right", x: 0.826, y: 1.000, led: 95, frame: grid(15.1, 5.5, 1, 1)),
+        Key(name: "Num0", x: 0.893, y: 0.961, led: 101, frame: grid(16.25, 5.35, 1, 1)),
+        Key(name: "Num .", x: 0.946, y: 0.961, led: 107, frame: grid(17.25, 5.35, 1, 1)),
+        Key(name: "Enter", x: 1.000, y: 0.881, led: 112, frame: grid(18.25, 4.35, 1, 2)),
+        Key(name: "PgDn", x: 1.000, y: 0.000, led: 108, frame: grid(18.25, 0, 1, 1)),
     ]
 }

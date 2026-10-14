@@ -51,11 +51,13 @@ struct F99MoodApp: App {
         // in the menu bar; click the Dock icon or the menu bar icon to get it back.
         Window("F99 Mood", id: "main") {
             EditorView().environmentObject(model)
+                .tint(Theme.lavender)
         }
         .defaultSize(width: 980, height: 820)
 
         MenuBarExtra {
             MenuView().environmentObject(model)
+                .tint(Theme.lavender)
         } label: {
             Image(systemName: "keyboard")
         }
@@ -100,18 +102,18 @@ enum CLI {
             return 1
         }
         defer { source.stop() }
-        // Same timing as the app: analysis every 12 ms, a line every ~50 ms.
-        let analyzer = MusicAnalyzer(hop: 0.012)
+        // Same timing as the app: analysis every 25 ms, a line every 50 ms.
+        let analyzer = MusicAnalyzer(hop: 0.025)
         let bars = " ▁▂▃▄▅▆▇█"
         var beats = 0
         var heard = false
-        for i in 0..<833 {
-            usleep(12_000)
+        for i in 0..<400 {
+            usleep(25_000)
             let latest = samples.latest(2048)
             if latest.contains(where: { $0 != 0 }) { heard = true }
             let m = analyzer.analyze(latest, sampleRate: samples.sampleRate, time: ProcessInfo.processInfo.systemUptime)
             if m.beat { beats += 1 }
-            guard i % 4 == 0 else { continue }
+            guard i % 2 == 0 else { continue }
             let line = m.bands.map { b in bars[bars.index(bars.startIndex, offsetBy: Int(b * 8.99))] }
             print("\r" + String(line) + String(format: "  level %3.0f%%  %3.0f BPM  ", m.level * 100, m.bpm) + (m.beat ? "BEAT" : "    "),
                   terminator: "")

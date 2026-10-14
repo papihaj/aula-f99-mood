@@ -244,7 +244,15 @@ enum Schedule {
     }
 }
 
-/// Light or dark windows, or follow macOS.
+/// What the light bar beside Delete shows.
+enum StripStyle: String, Codable, CaseIterable, Identifiable {
+    case match = "Match the keys"
+    case color = "One colour"
+    case off = "Off"
+    var id: String { rawValue }
+}
+
+/// Light or dark windows, or follow macOS (Settings → General).
 enum Appearance: String, Codable, CaseIterable, Identifiable {
     case system = "Match the Mac"
     case light = "Light"
@@ -256,6 +264,10 @@ enum Appearance: String, Codable, CaseIterable, Identifiable {
 /// Resources/Sounds/CREDITS.md), or your own file.
 enum KeySound: String, Codable, CaseIterable, Identifiable {
     case tactile = "Tactile"
+    case thocky = "Thocky"
+    case creamy = "Creamy"
+    case rainy = "Creamy light"
+    case creamySoft = "Creamy soft"
     case clicky = "Clicky"
     case soft = "Soft"
     case custom = "My own sound file"
@@ -284,8 +296,11 @@ struct AppSettings: Codable {
     var reducedFlashing = false
     /// Adjust streamed colours for how LEDs look (gamma 2.2).
     var ledColorCorrection = true
-    /// Change the light strip's colour to match moods and music themes.
-    var stripFollowsColors = true
+    /// The light bar: match moods and music themes, one colour, or off.
+    var stripStyle: StripStyle = .match
+    /// The light bar's colour for `.color` (a firmware colour id).
+    var stripColor = 2
+    var stripFollowsColors: Bool { stripStyle == .match }
     /// In live effects and music, no key goes below about half brightness,
     /// so the letters stay readable (the F99's keycaps aren't see-through).
     var keepKeysLit = false
@@ -339,6 +354,8 @@ struct AppSettings: Codable {
     var moodsVersion = 1
     var musicHotkey: Hotkey? = Hotkey(keyCode: 2, modifiers: Hotkey.control | Hotkey.option) // ⌃⌥D
 
+    private enum LegacyKeys: String, CodingKey { case stripFollowsColors }
+
     init(moods: [Mood], macros: [Macro], activeMoodID: UUID?) {
         self.moods = moods
         self.macros = macros
@@ -358,7 +375,10 @@ struct AppSettings: Codable {
         musicPaletteName = try c.decodeIfPresent(String.self, forKey: .musicPaletteName) ?? MusicPalette.electric.name
         reducedFlashing = try c.decodeIfPresent(Bool.self, forKey: .reducedFlashing) ?? false
         ledColorCorrection = try c.decodeIfPresent(Bool.self, forKey: .ledColorCorrection) ?? true
-        stripFollowsColors = try c.decodeIfPresent(Bool.self, forKey: .stripFollowsColors) ?? true
+        // Older files had a yes/no "strip matches colours".
+        let legacy = try? decoder.container(keyedBy: LegacyKeys.self).decodeIfPresent(Bool.self, forKey: .stripFollowsColors)
+        stripStyle = (try? c.decodeIfPresent(StripStyle.self, forKey: .stripStyle)) ?? (legacy == false ? .off : .match)
+        stripColor = min(max((try? c.decodeIfPresent(Int.self, forKey: .stripColor)) ?? 2, 0), F99.colors.count - 1)
         moodsVersion = try c.decodeIfPresent(Int.self, forKey: .moodsVersion) ?? 1
         keepKeysLit = try c.decodeIfPresent(Bool.self, forKey: .keepKeysLit) ?? false
         startupMoodID = try c.decodeIfPresent(UUID.self, forKey: .startupMoodID)
@@ -384,7 +404,8 @@ struct AppSettings: Codable {
         mailAlerts = opt(.mailAlerts) ?? false
         stripAlerts = opt(.stripAlerts) ?? true
         stripAlertColor = min(max(opt(.stripAlertColor) ?? 4, 0), F99.colors.count - 1)
-        nowPlayingBar = opt(.nowPlayingBar) ?? false
+        // No longer offered in Settings, so it stays off even in older files.
+        nowPlayingBar = false
         nowPlayingColor = opt(.nowPlayingColor) ?? RGB(hex: 0xffffff)
         appearance = opt(.appearance) ?? .system
         keySounds = opt(.keySounds) ?? false
@@ -415,8 +436,8 @@ struct AppSettings: Codable {
         mood("Gaming",         "🎮", 12, /* Reaction */      4, 2, 0, key: 5), // ⌃⌥G
         mood("Starry Night",   "✨", 8,  /* Stars twinkle */ 2, 1, 6, key: 20),
         mood("Ocean Waves",    "🌊", 13, /* Sine wave */     3, 1, 5, key: 21),
-        mood("Rainbow Wheel",  "🌈", 6,  /* Rainbow wheel */ 4, 2, 7, key: 22),
-        mood("Lights out",     "🌙", 1,  /* Fixed on, off */      0, 0, 6, key: 29),
+        mood("Rainbow",        "🌈", 11, /* Neon stream */   4, 2, 7, key: 22),
+        mood("Pastel Rain",    "🌧️", 5,  /* Raindrops */     4, 3, 7, key: 23), // ⌃⌥5
     ] + liveMoods
 
     /// Moods with live effects, in the style of other brands' popular ones.
@@ -430,7 +451,17 @@ struct AppSettings: Codable {
         live("Aurora",         "🌌", .aurora,                  3, 1, 7),
         live("Typing Heatmap", "🌡️", .typingHeatmap,           4, 2, 7),
         wasd,
+        pastelRipples,
     ]
+
+    /// Pastel rings from each key you press, over a soft pastel glow (the
+    /// keyboard's own Ripples effect fades every other key to black).
+    static let pastelRipples: Mood = {
+        var m = live("Pastel Ripples", "🫧", .typingRipples, 4, 2, 7)
+        m.paletteName = MusicPalette.pastel.name
+        m.hotkey = Hotkey(keyCode: 19, modifiers: Hotkey.control | Hotkey.option) // ⌃⌥2
+        return m
+    }()
 
     /// Soft rings spreading from the centre in the Electric colours.
     static let electricRipples: Mood = {
@@ -479,15 +510,29 @@ struct AppSettings: Codable {
     ]
     /// 2: the effect-based set. 3: Gaming is back. 4: live effects.
     /// 5: Neon Cascade. 6: WASD (painted keys). 7: Electric Ripples, and
-    /// look-alike moods retired. 8: more look-alikes retired.
-    static let moodsVersion = 8
+    /// look-alike moods retired. 8: more look-alikes retired. 10: Rainbow
+    /// Wheel becomes Rainbow on Neon stream (effect 6 leaves an F99's keys
+    /// dark), Pastel Ripples, and Lights out gives way to the Off button.
+    /// 11: Pastel Rain.
+    static let moodsVersion = 11
 
     /// What a new user starts with: the built-in moods, no macros, and the
     /// keyboard left on its own lighting until they pick a mood. Your own
     /// choices live in your settings file, never in the app.
     static let defaults: AppSettings = {
-        var s = AppSettings(moods: builtInMoods, macros: [], activeMoodID: nil)
+        // One example macro, so the Macros page shows what they do.
+        let openMusic = Macro(name: "Open Music", hotkey: Hotkey(keyCode: 46, modifiers: Hotkey.control | Hotkey.option), // ⌃⌥M
+                              action: .open, value: "Music", moodID: nil)
+        var s = AppSettings(moods: builtInMoods, macros: [openMusic], activeMoodID: nil)
         s.moodsVersion = moodsVersion
+        // Examples to switch on: a warm glow at night, Focus on weekday mornings.
+        func sample(_ hour: Int, _ days: Set<Int>, _ mood: String) -> ScheduleEntry? {
+            guard let id = s.moods.first(where: { $0.name == mood })?.id else { return nil }
+            var e = ScheduleEntry(hour: hour, minute: 0, days: days, moodID: id)
+            e.enabled = false
+            return e
+        }
+        s.schedule = [sample(22, Set(1...7), "Campfire"), sample(9, Set(2...6), "Focus")].compactMap { $0 }
         return s
     }()
 
@@ -508,6 +553,20 @@ struct AppSettings: Codable {
                 }
             }
         }
+        if moodsVersion < 10 {
+            // Effect 6 shows nothing on a real F99. Neon stream (11) is the
+            // rainbow that fills the board (3 turns it all one colour).
+            for i in moods.indices where moods[i].lighting.effect == 6
+                || (moods[i].name == "Rainbow" && moods[i].lighting.effect == 3) {
+                moods[i].lighting.effect = 11
+                if moods[i].name == "Rainbow Wheel" { moods[i].name = "Rainbow" }
+            }
+            // The Off button replaces Lights out.
+            for m in moods where m.name == "Lights out" && m.live == nil && m.lighting.brightness == 0
+                && m.id != startupMoodID && !schedule.contains(where: { $0.moodID == m.id }) {
+                deleteMood(m.id)
+            }
+        }
         addMissingBuiltInMoods()
         if let id = activeMoodID, !moods.contains(where: { $0.id == id }) { activeMoodID = nil }
         moodsVersion = Self.moodsVersion
@@ -520,12 +579,12 @@ struct AppSettings: Codable {
         var taken = Set(moods.compactMap(\.hotkey) + macros.compactMap(\.hotkey) + [musicHotkey].compactMap { $0 })
         var added = 0
         // Add each missing built-in mood after the one before it in the
-        // built-in list (so Gaming lands after Focus), else before Lights out.
+        // built-in list (so Gaming lands after Focus), else at the end.
         for (i, var mood) in Self.builtInMoods.enumerated() where !moods.contains(where: { $0.name == mood.name }) {
             if let key = mood.hotkey, taken.contains(key) { mood.hotkey = nil }
             if let key = mood.hotkey { taken.insert(key) }
             let previous = i > 0 ? moods.firstIndex { $0.name == Self.builtInMoods[i - 1].name } : nil
-            let at = previous.map { $0 + 1 } ?? moods.firstIndex { $0.name == "Lights out" } ?? moods.count
+            let at = previous.map { $0 + 1 } ?? moods.count
             moods.insert(mood, at: at)
             added += 1
         }

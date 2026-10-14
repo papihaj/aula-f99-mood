@@ -25,7 +25,7 @@ enum LiveEffect: String, Codable, CaseIterable, Identifiable {
 
     /// The live effects the mood editor offers. The others move like one of
     /// these or like a keyboard effect; they still work in saved moods.
-    static let offered: [LiveEffect] = [.cascade, .aurora, .matrix, .fire, .ripples, .typingHeatmap, .painted]
+    static let offered: [LiveEffect] = [.cascade, .aurora, .matrix, .fire, .ripples, .typingRipples, .typingHeatmap, .painted]
 
     var reactsToTyping: Bool { self == .typingRipples || self == .typingHeatmap || self == .cascade }
 
@@ -76,7 +76,8 @@ final class LiveRenderer {
     var haloSize = 1.0
     /// Seconds for a pressed key to fade.
     var pressFade = 0.45
-    /// Painted keys: a colour per LED, and the colour of the rest.
+    /// Painted keys: a colour per LED (over any effect), and for the
+    /// Painted keys effect, the colour of the rest.
     var paint: [Int: RGB] = [:]
     var paintBase: RGB? = nil
 
@@ -115,7 +116,8 @@ final class LiveRenderer {
         let light = pressColor
             ?? palette.colors.max { $0.luminance < $1.luminance }.map { $0.mixed(with: RGB(1, 1, 1), 0.5) } ?? RGB(1, 1, 1)
         for key in F99.keys where key.led < Keyboard.streamSlots {
-            var (c, v) = color(key, t, now)
+            // Painted keys keep their colour over any effect.
+            var (c, v) = paint[key.led].map { ($0, 1.0) } ?? color(key, t, now)
             if minimumBrightness > 0 { c = c.atLeast(peak: 0.7) }
             if pressGlow && !presses.isEmpty { (c, v) = pressed(key, c, v, light, now) }
             v = minimumBrightness + (1 - minimumBrightness) * min(max(v, 0), 1)
@@ -158,7 +160,8 @@ final class LiveRenderer {
             // Hot at the bottom, flickering flames rising.
             let rise = y * 1.15 - 0.2
             let flicker = Self.noise(x * 7, t * 2.2 - y * 3) * 0.6 + Self.noise(x * 15, t * 4) * 0.25
-            let heat = min(max(rise + flicker - 0.35, 0), 1)
+            // Glowing embers keep even the top rows warm.
+            let heat = min(max(rise + flicker - 0.35, 0.22 + 0.12 * Self.noise(x * 11, t * 1.3)), 1)
             return (palette.sample(heat, wrap: false), 0.05 + 0.95 * pow(heat, 0.8))
 
         case .aurora:
@@ -237,15 +240,20 @@ final class LiveRenderer {
             return (palette.sample(0.45 + local, wrap: false), v)
 
         case .typingRipples:
-            var v = 0.04
-            var c = palette.sample(t * 0.02, wrap: true)
+            // Every key keeps a soft glow in the theme; rings spread from
+            // each key you press. Below about half, the LEDs lose red and
+            // green and every colour turns a dim blue.
+            var v = 0.5
+            // Each key its own colour, so neighbours differ, drifting slowly.
+            let c = palette.sample(Self.hash(key.led, 3) + t * 0.02, wrap: true)
             for p in presses {
                 let age = now.timeIntervalSince(p.at)
                 let d = Self.distance(key, p.x, p.y)
                 let ring = exp(-pow(d - age * 0.9, 2) / 0.0025) * max(0, 1 - age / 1.6)
                 let tap = d < 0.001 ? max(0, 1 - age / 0.4) : 0
-                let glow = max(ring, tap)
-                if glow > v { v = glow; c = palette.sample(Self.hash(p.led, 7) + age * 0.2, wrap: true) }
+                // The ring brightens each key in its own colour, like the
+                // keyboard's own Ripples, rather than painting one colour.
+                v = max(v, ring, tap)
             }
             return (c, v)
 

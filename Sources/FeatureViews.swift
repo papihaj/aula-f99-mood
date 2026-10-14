@@ -2,115 +2,6 @@ import SwiftUI
 import EventKit
 import UniformTypeIdentifiers
 
-// MARK: Remix
-
-/// Under the keyboard: new colours for the mood that's on, in one tap.
-/// The mood changes straight away; Revert puts it back and "Save as new"
-/// keeps the remix as a mood of its own.
-struct RemixBar: View {
-    @EnvironmentObject var model: AppModel
-    let mood: Mood
-    var compact = false
-
-    var body: some View {
-        let changed = model.remixOriginals[mood.id] != nil
-        let effect = F99.effect(mood.lighting.effect)
-        let fixedEffect = mood.live == nil && effect?.hasColor == false
-        // Nothing to remix when the effect picks its own colours or the
-        // keys are painted (paint them in the mood editor instead).
-        if mood.lighting.brightness > 0 && !fixedEffect && mood.live != .painted {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Text("Remix").font(.subheadline.weight(.semibold))
-                    Spacer(minLength: 4)
-                    if changed {
-                        // The main window has Revert above the keyboard.
-                        if compact {
-                            Button { model.revertRemix(mood.id) } label: { Label("Revert", systemImage: "arrow.uturn.backward") }
-                                .help("Put the mood's colours back")
-                        } else {
-                            Button { model.saveRemix(mood.id) } label: { Label("Save as new mood", systemImage: "plus.square.on.square") }
-                        }
-                    }
-                }
-                .labelStyle(compact ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-
-                if mood.live != nil {
-                    themeChips
-                } else {
-                    colourDots
-                }
-            }
-        }
-    }
-
-    private var themeChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                let own = mood.live?.palette ?? .electric
-                let mine = MusicPalette(name: MusicPalette.customName, colors: model.settings.customColors)
-                chip("Own", own.colors, selected: mood.paletteName == nil && mood.lighting.color == F99.colorful) { m in
-                    m.paletteName = nil; m.lighting.color = F99.colorful
-                }
-                ForEach(MusicPalette.presets + [mine]) { p in
-                    chip(p.name == MusicPalette.customName ? "Mine" : p.name, p.colors, selected: mood.paletteName == p.name) { m in
-                        m.paletteName = p.name
-                    }
-                }
-            }
-            .padding(.vertical, 2)
-        }
-    }
-
-    private func chip(_ name: String, _ colors: [RGB], selected: Bool, _ change: @escaping (inout Mood) -> Void) -> some View {
-        Button { model.remix(mood.id, change) } label: {
-            HStack(spacing: 5) {
-                MoodSwatch(colors: colors.map(\.color), corner: 4).frame(width: 16, height: 16)
-                Text(name).font(.caption.weight(.medium)).lineLimit(1)
-            }
-            .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 3)
-            .background(Capsule().fill(selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05)))
-            .overlay(Capsule().strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1), lineWidth: selected ? 1.5 : 0.5))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(name) colours")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private var colourDots: some View {
-        HStack(spacing: compact ? 6 : 8) {
-            ForEach(F99.colors) { c in
-                dot(AnyShapeStyle(c.swiftUI), id: c.id, name: c.name)
-            }
-            dot(AnyShapeStyle(AngularGradient(colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red], center: .center)),
-                id: F99.colorful, name: "Colourful")
-        }
-    }
-
-    private func dot(_ fill: AnyShapeStyle, id: Int, name: String) -> some View {
-        let selected = mood.lighting.color == id
-        return Button { model.remix(mood.id) { $0.lighting.color = id } } label: {
-            Circle().fill(fill)
-                .frame(width: compact ? 18 : 22, height: compact ? 18 : 22)
-                .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
-                .padding(2.5)
-                .overlay(Circle().strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
-        }
-        .buttonStyle(.plain)
-        .help(name)
-        .accessibilityLabel(name)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-struct AnyLabelStyle: LabelStyle {
-    private let make: (Configuration) -> AnyView
-    init<S: LabelStyle>(_ style: S) { make = { AnyView(style.makeBody(configuration: $0)) } }
-    func makeBody(configuration: Configuration) -> some View { make(configuration) }
-}
-
 // MARK: Painting
 
 extension F99 {
@@ -337,11 +228,9 @@ struct AlertsSection: View {
                 if denied.value {
                     HStack {
                         Image(systemName: "calendar.badge.exclamationmark").foregroundStyle(.orange)
-                        Text("Allow F99 Mood under Privacy & Security → Calendars.").font(.callout)
+                        Text("Calendar alerts need access to your calendars.").font(.callout)
                         Spacer()
-                        Button("Open Settings") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
-                        }
+                        Button("Turn on…") { model.turnOnCalendars() }
                     }
                 }
                 Picker("When", selection: $model.settings.alertMinutesBefore) {
@@ -353,23 +242,11 @@ struct AlertsSection: View {
                 if model.settings.mailAlerts && model.mailNotAllowed {
                     HStack {
                         Image(systemName: "hand.raised").foregroundStyle(.orange)
-                        Text("Allow F99 Mood to read Mail's unread count under Privacy & Security → Automation.").font(.callout)
+                        Text("Mail alerts need permission to read Mail's unread count.").font(.callout)
                         Spacer()
-                        Button("Open Settings") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!)
-                        }
-                    }
-                }
-                Toggle("Show song progress beside the strip", isOn: $model.settings.nowPlayingBar)
-                if model.settings.nowPlayingBar {
-                    if model.nowPlayingNotAllowed {
-                        HStack {
-                            Image(systemName: "hand.raised").foregroundStyle(.orange)
-                            Text("Allow F99 Mood to control Spotify or Music under Privacy & Security → Automation.").font(.callout)
-                            Spacer()
-                            Button("Open Settings") {
-                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!)
-                            }
+                        Button("Turn on…") {
+                            // Mail asks again on its next check, every few seconds.
+                            PrivacyPane.turnOn(service: "AppleEvents", pane: "Privacy_Automation") {}
                         }
                     }
                 }

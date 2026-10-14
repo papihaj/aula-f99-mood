@@ -37,6 +37,8 @@ final class AppModel: ObservableObject {
     /// True when the app has heard nothing at all for a while: either nothing
     /// is playing, or macOS hasn't allowed audio recording.
     @Published private(set) var hearingNothing = false
+    /// Music mode has heard exact silence for a few seconds.
+    private var silentNow = false
     /// A mood picked while music plays: the music takes its colours.
     @Published private(set) var musicMood: Mood?
     /// The live effect mood running now, if any.
@@ -66,10 +68,10 @@ final class AppModel: ObservableObject {
     // Music mode. The analyzer, renderer and saved page are only touched on `queue`.
     private var audio: AudioSource?
     nonisolated(unsafe) private let samples = SampleBuffer() // thread-safe
-    /// Beat detection runs ~80 times a second on its own queue so beats land
-    /// within ~12 ms; the lights still update 20 times a second.
+    /// Beat detection runs 40 times a second on its own queue so beats land
+    /// within 25 ms; the lights still update 20 times a second.
     private let analysisQueue = DispatchQueue(label: "f99.analysis", qos: .userInitiated)
-    nonisolated private static let analysisHop = 0.012
+    nonisolated private static let analysisHop = 0.025
     nonisolated(unsafe) private var analyzer = MusicAnalyzer(hop: Float(AppModel.analysisHop))
     private var analysisTimer: DispatchSourceTimer?
     /// The analysis since the last light frame, with any beat in between kept.
@@ -104,6 +106,10 @@ final class AppModel: ObservableObject {
     @Published var editMoodRequest: UUID?
     /// The pane showing in the main window's sidebar.
     @Published var pane: EditorView.Pane = .home
+    /// The page the first-run tour is showing, if it's running.
+    @Published var tourStep: Int? {
+        didSet { if let step = tourStep { pane = Tour.stops[step].pane } }
+    }
     /// Why the typing sound can't play, if it can't.
     @Published private(set) var keySoundError: String?
     /// A song is playing in Spotify or Music (for the now-playing bar).
@@ -111,6 +117,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var nowPlayingNotAllowed = false
     /// Moods as they were before "Remix" changed them this session.
     @Published private(set) var remixOriginals: [UUID: Mood] = [:]
+    /// What the side panel on Home is showing, if it's open.
+    @Published var inspecting: Inspecting?
+    /// Keys picked on the keyboard picture (LED numbers).
+    @Published var selectedKeys: Set<Int> = []
+
+    enum Inspecting: Equatable { case mood, keys, light }
 
     init() {
         settings = Storage.load()
@@ -184,6 +196,7 @@ final class AppModel: ObservableObject {
             && (NSApp?.windows.contains { $0.isVisible && $0.occlusionState.contains(.visible) } ?? true)
         queue.async { [weak self] in self?.windowVisible = visible }
         if ticks % 3 == 0 { poll() }
+        if musicOn, silentNow, ticks % 2 == 0 { updateHearingNothing() }
         checkIdle()
         checkSchedule()
         if ticks % 20 == 0 { checkCalendar() }
@@ -280,6 +293,12 @@ final class AppModel: ObservableObject {
             }
         }
     }
+
+    /// Lights off, from the Off button. Not a mood in the list.
+    private static let offMood = Mood(name: "Off", emoji: "", lighting: .init(effect: 1, brightness: 0, speed: 0, color: 6),
+                                      hotkey: nil)
+    func turnOff() { apply(Self.offMood) }
+    var isOff: Bool { settings.activeMoodID == Self.offMood.id }
 
     func apply(_ mood: Mood) {
         if mood.live != nil {
@@ -380,13 +399,36 @@ final class AppModel: ObservableObject {
     /// off for a mood with the lights off, else the strip's own gradient.
     private func strip(for mood: Mood) -> ConfigPage.Strip? {
         // An alert is showing on the strip: leave it until it's cleared.
-        guard settings.stripFollowsColors, stripAlert == nil else { return nil }
+        guard stripAlert == nil else { return nil }
+        if let chosen = chosenStrip { return chosen }
         let fixed = (0..<F99.colorful).contains(mood.lighting.color)
         if let live = mood.live, !fixed { return live.palette.strip }
-        if mood.live == nil, mood.lighting.brightness == 0 { return .off }
-        let effect = F99.effect(mood.lighting.effect)
-        guard effect?.hasColor != false, fixed else { return .gradient }
-        return .steady(mood.lighting.color)
+        var lighting = mood.lighting
+        if mood.live != nil { lighting.brightness = max(lighting.brightness, 1) } // live moods are never dark
+        return Self.strip(for: lighting)
+    }
+
+    /// The light bar the user picked when it doesn't match the keys.
+    private var chosenStrip: ConfigPage.Strip? {
+        switch settings.stripStyle {
+        case .match: nil
+        case .color: .steady(settings.stripColor)
+        case .off: .off
+        }
+    }
+
+    /// The strip for music or a theme, or nil while an alert is showing.
+    private func strip(for palette: MusicPalette) -> ConfigPage.Strip? {
+        guard stripAlert == nil else { return nil }
+        return chosenStrip ?? palette.strip
+    }
+
+    /// The strip that matches what the keys show by themselves.
+    nonisolated private static func strip(for lighting: ConfigPage.Lighting) -> ConfigPage.Strip {
+        if lighting.brightness == 0 { return .off }
+        let fixed = (0..<F99.colorful).contains(lighting.color)
+        guard F99.effect(lighting.effect)?.hasColor != false, fixed else { return .gradient }
+        return .steady(lighting.color)
     }
 
     /// Change just the strip (a saved setting, so only on changes).
@@ -420,6 +462,23 @@ final class AppModel: ObservableObject {
 
     func toggleMusic() { musicOn ? stopMusic() : startMusic() }
 
+    /// Dance to music in a mood's colours: a named theme (Pastel, Electric…)
+    /// becomes the music theme; other moods lend their colours for this song.
+    func danceInColours(of mood: Mood) {
+        let palette = livePalette(mood)
+        let named = mood.live == nil ? nil : MusicPalette.presets.first { $0.name == palette.name }?.name
+            ?? (palette.name == MusicPalette.customName ? palette.name : nil)
+        if let named { setMusicPalette(named) }
+        if liveMood != nil { stopLive() }
+        startMusic()
+        guard musicOn, named == nil else { return }
+        if mood.live == nil { apply(mood); return } // music carries on in the mood's colours
+        musicMood = mood
+        settings.activeMoodID = mood.id
+        queue.async { [weak self] in self?.renderer.palette = palette }
+        setStrip(strip(for: palette))
+    }
+
     func setMusicStyle(_ style: MusicStyle) {
         settings.musicStyle = style
         queue.async { [weak self] in self?.renderer.style = style }
@@ -444,15 +503,26 @@ final class AppModel: ObservableObject {
     private func pushPalette() {
         let palette = settings.musicPalette
         musicMood = nil
-        if musicOn, settings.stripFollowsColors, stripAlert == nil { setStrip(palette.strip) }
+        if musicOn { setStrip(strip(for: palette)) }
         queue.async { [weak self] in
             self?.renderer.palette = palette
             self?.renderer.brightnessScale = 1
         }
     }
 
-    func setStripFollowsColors(_ on: Bool) {
-        settings.stripFollowsColors = on
+    /// Change what the light bar shows, and show it now.
+    func setStrip(style: StripStyle, color: Int? = nil) {
+        settings.stripStyle = style
+        if let color { settings.stripColor = color }
+        let wanted: ConfigPage.Strip?
+        if musicOn {
+            wanted = strip(for: musicMood.map(livePalette) ?? settings.musicPalette)
+        } else if let mood = liveMood ?? activeMood {
+            wanted = strip(for: mood)
+        } else {
+            wanted = stripAlert == nil ? chosenStrip : nil
+        }
+        setStrip(wanted)
     }
 
     func setMusicInput(_ input: MusicInput) {
@@ -484,9 +554,10 @@ final class AppModel: ObservableObject {
         let reduced = settings.reducedFlashing
         let floor = keysLitFloor
         let correction = settings.ledColorCorrection
-        let strip = settings.stripFollowsColors && stripAlert == nil ? palette.strip : nil
+        let strip = self.strip(for: palette)
         musicMood = nil
         hearingNothing = false
+        silentNow = false
         streamSession += 1
         let session = streamSession
         let dim = currentDimLevel
@@ -608,7 +679,14 @@ final class AppModel: ObservableObject {
     }
 
     /// Runs on `queue`.
-    /// Runs on `analysisQueue`, ~80 times a second.
+    /// Warn about silence only while another app is playing sound: then
+    /// macOS is withholding it. Nothing playing is just quiet.
+    private func updateHearingNothing() {
+        let warn = musicOn && silentNow && settings.musicInput == .system && (PlaybackCheck.otherAppPlaying ?? true)
+        if hearingNothing != warn { hearingNothing = warn }
+    }
+
+    /// Runs on `analysisQueue`, 40 times a second.
     nonisolated private func analyzeOnce(watchForSilence: Bool) {
         let samples = self.samples.latest(2048)
         var snap = analyzer.analyze(samples, sampleRate: self.samples.sampleRate,
@@ -621,7 +699,10 @@ final class AppModel: ObservableObject {
             silentSeconds = samples.contains { $0 != 0 } ? 0 : silentSeconds + Self.analysisHop
             let isSilent = silentSeconds >= 3
             if isSilent != wasSilent {
-                DispatchQueue.main.async { [weak self] in self?.hearingNothing = isSilent }
+                DispatchQueue.main.async { [weak self] in
+                    self?.silentNow = isSilent
+                    self?.updateHearingNothing()
+                }
             }
         }
 
@@ -647,10 +728,13 @@ final class AppModel: ObservableObject {
         snapshotLock.unlock()
         guard let snapshot else { return }
         let frame = withOverlays(renderer.render(snapshot))
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.musicOn else { return }
-            self.streamFrame = frame
-            self.meter.update(level: snapshot.level, bpm: snapshot.bpm)
+        // Redraw the on-screen keyboard only while someone can see it.
+        if windowVisible {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.musicOn else { return }
+                self.streamFrame = frame
+                self.meter.update(level: snapshot.level, bpm: snapshot.bpm)
+            }
         }
         push(frame, failureMessage: "Lost the keyboard while playing music.")
     }
@@ -700,6 +784,7 @@ final class AppModel: ObservableObject {
         analysisTimer?.cancel()
         analysisTimer = nil
         hearingNothing = false
+        silentNow = false
         meter.update(level: 0, bpm: 0)
         audio?.stop()
         audio = nil
@@ -739,9 +824,16 @@ final class AppModel: ObservableObject {
         liveTimer?.cancel()
         liveTimer = nil
         let dark = lightingBeforeDark
+        let matchStrip = settings.stripStyle == .match && stripAlert == nil
         queue.sync {
             _ = try? endStream()
             if let dark, let kb = keyboard { _ = try? kb.apply(dark) }
+            // Music and live moods colour the strip, but the keys go back to
+            // the keyboard's own lighting: leave the strip matching that.
+            if matchStrip, let kb = keyboard, let page = try? kb.readSettings(), let lighting = page.current {
+                let strip = Self.strip(for: lighting)
+                if !page.shows(strip) { _ = try? kb.setStrip(strip) }
+            }
         }
     }
 
@@ -975,7 +1067,8 @@ final class AppModel: ObservableObject {
            now.lighting != before.lighting || now.live != before.live || now.paletteName != before.paletteName
             || now.paint != before.paint || now.paintBase != before.paintBase {
             // Painting shows at once, without waiting.
-            if liveMood?.id == id, now.live == .painted, now.lighting == before.lighting, now.live == before.live {
+            if liveMood?.id == id, now.live != nil, now.lighting == before.lighting, now.live == before.live,
+               now.paletteName == before.paletteName {
                 let paint = now.paintByLED, base = now.paintBase
                 queue.async { [weak self] in self?.liveRenderer.paint = paint; self?.liveRenderer.paintBase = base }
                 liveMood = now
@@ -1007,6 +1100,16 @@ final class AppModel: ObservableObject {
     func saveNow() {
         saveWork?.cancel()
         Storage.save(settings)
+    }
+
+    /// Quit and open again, so macOS applies a permission just turned on.
+    func relaunch() {
+        saveNow()
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
+        try? p.run()
+        NSApp.terminate(nil)
     }
 
     private static func hotkeySignature(_ s: AppSettings) -> [String] {
@@ -1075,6 +1178,7 @@ final class AppModel: ObservableObject {
         applyDockSetting()
     }
 
+    /// Light, dark, or following the Mac. The colours in `Theme` change with it.
     func applyAppearance() {
         NSApp.appearance = switch settings.appearance {
         case .system: nil
@@ -1257,6 +1361,11 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Put F99 Mood in the Calendars list and open it there.
+    func turnOnCalendars() {
+        PrivacyPane.turnOn(service: "Calendar", pane: "Privacy_Calendars") { requestCalendarAccess { _ in } }
+    }
+
     /// Flash the whole keyboard a few times. On top of a live effect or the
     /// music; with a keyboard effect on, the keyboard is switched to per-key
     /// mode just for the flashes, then put back.
@@ -1366,7 +1475,7 @@ final class AppModel: ObservableObject {
         guard stripAlert != nil else { return }
         stripAlert = nil
         stripAlertUntil = nil
-        let back = musicOn ? (settings.stripFollowsColors ? settings.musicPalette.strip : nil)
+        let back = musicOn ? strip(for: settings.musicPalette)
             : (liveMood ?? activeMood).flatMap { strip(for: $0) }
         setStrip(back ?? stripBeforeAlert)
         stripBeforeAlert = nil
@@ -1382,30 +1491,37 @@ final class AppModel: ObservableObject {
 
     // MARK: New moods
 
-    enum NewMoodKind { case keyboard, live, painted }
+    /// A mood being made in the editor. It's only added to the moods when
+    /// you press Create; Cancel throws it away.
+    @Published var newMood: Mood?
+    private var moodBeforeNew: UUID?
 
-    /// Make a mood and ask the editor to open it.
-    @discardableResult
-    func createMood(_ kind: NewMoodKind) -> UUID {
-        var mood: Mood
-        switch kind {
-        case .keyboard:
-            mood = Mood(name: "New mood", emoji: "", lighting: .init(effect: 2, brightness: 3, speed: 2, color: 5), hotkey: nil)
-        case .live:
-            mood = Mood(name: "New live mood", emoji: "", lighting: .init(effect: 1, brightness: 4, speed: 2, color: F99.colorful),
-                        hotkey: nil, live: .aurora)
-        case .painted:
-            mood = Mood(name: "My painting", emoji: "", lighting: .init(effect: 1, brightness: 4, speed: 0, color: F99.colorful),
-                        hotkey: nil, live: .painted)
-            mood.paintBase = RGB(hex: 0x1a0640)
-        }
+    /// Start a new mood in the editor. Its effect can be a keyboard or a
+    /// live one; you pick in the editor.
+    func startNewMood() {
+        var mood = Mood(name: "New mood", emoji: "", lighting: .init(effect: 2, brightness: 3, speed: 2, color: 5), hotkey: nil)
         var name = mood.name, n = 2
         while settings.moods.contains(where: { $0.name == name }) { name = "\(mood.name) \(n)"; n += 1 }
         mood.name = name
+        moodBeforeNew = settings.activeMoodID
+        newMood = mood
+    }
+
+    /// Keep the new mood, and show it.
+    func createNewMood() {
+        guard let mood = newMood else { return }
+        newMood = nil
         settings.moods.append(mood)
         apply(mood)
-        editMoodRequest = mood.id
-        return mood.id
+    }
+
+    /// Throw the new mood away. If you tried it on the keyboard, the mood
+    /// from before comes back.
+    func cancelNewMood() {
+        guard let mood = newMood else { return }
+        newMood = nil
+        guard settings.activeMoodID == mood.id else { return }
+        if let before = settings.moods.first(where: { $0.id == moodBeforeNew }) { apply(before) } else { turnOff() }
     }
 
     // MARK: Remix
@@ -1442,6 +1558,48 @@ final class AppModel: ObservableObject {
         } else {
             revertRemix(id)
         }
+    }
+
+    /// Move a mood one place earlier or later among the tiles of its kind.
+    func moveMood(_ id: UUID, by step: Int) {
+        let moods = settings.moods
+        guard let i = moods.firstIndex(where: { $0.id == id }) else { return }
+        let live = moods[i].live != nil
+        var j = i + step
+        while moods.indices.contains(j), (moods[j].live != nil) != live || moods[j].hidden { j += step }
+        guard moods.indices.contains(j) else { return }
+        settings.moods.swapAt(i, j)
+    }
+
+    /// Keep a remix: it stays, with nothing left to revert to.
+    func keepRemix(_ id: UUID) { remixOriginals[id] = nil }
+
+    /// Paint the picked keys (nil takes their paint off). Moods the keyboard
+    /// draws itself can't light single keys, so painting one starts a
+    /// painted mood in its colour.
+    func paintSelectedKeys(_ color: RGB?) {
+        guard !selectedKeys.isEmpty, !musicOn else { return }
+        var target = liveMood ?? activeMood
+        if target?.live == nil {
+            guard color != nil else { return }
+            var mood = Mood(name: "My keys", emoji: "", lighting: .init(effect: 1, brightness: 4, speed: 0, color: F99.colorful),
+                            hotkey: nil, live: .painted)
+            if let l = activeMood?.lighting, l.brightness > 0, F99.effect(l.effect)?.hasColor != false,
+               let c = F99.colors.first(where: { $0.id == l.color }) {
+                mood.paintBase = RGB(c.rgb.0 * 0.4, c.rgb.1 * 0.4, c.rgb.2 * 0.4)
+            } else {
+                mood.paintBase = RGB(hex: 0x1a0640)
+            }
+            var name = mood.name, n = 2
+            while settings.moods.contains(where: { $0.name == name }) { name = "My keys \(n)"; n += 1 }
+            mood.name = name
+            settings.moods.append(mood)
+            apply(mood)
+            target = mood
+        }
+        guard let id = target?.id else { return }
+        let keys = selectedKeys
+        remix(id) { m in for led in keys { m.paint[String(led)] = color } }
     }
 
     /// Keep the remix as a new mood and put the original back as it was.

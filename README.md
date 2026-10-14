@@ -1,78 +1,93 @@
 # F99 Mood
 
-A Mac menu bar app for the **EPOMAKER x AULA F99** keyboard. AULA's own
-software only runs on Windows. This app lets you control the lighting from a
-Mac.
+I made F99 Mood because AULA's own software for the EPOMAKER x AULA F99
+keyboard only runs on Windows. F99 Mood is a free Mac app that lets you control
+the keys, the lighting and other settings of your F99 from a Mac.
 
-- **Moods:** lighting presets you switch from the menu bar or with ⌃⌥
-  shortcuts. Some use the keyboard's built-in effects. Others are live effects
-  the app draws itself, like Aurora, Matrix, Campfire and a typing heatmap.
-- **Music:** the keys move with whatever is playing on your Mac, or with sound
-  from the microphone.
-- **Macros:** shortcuts that type text or open an app or a link.
-- **Extras:** a schedule, calendar and mail alerts, and typing sounds.
+- **Moods:** pick a lighting style, e.g., calm, rainbow, falling green code or a
+  campfire, and switch between them with a click or a shortcut.
+- **Music:** make the keys move with the music playing on your Mac.
+- **Macros:** set up shortcuts that type text for you or open an app.
+- **Extras:** switch moods on a schedule, flash the keys for calendar events
+  and new mail, and add typing sounds.
 
-Unofficial. Not made by or connected to AULA or EPOMAKER.
+Website: [joharapurkar.com/f99](https://joharapurkar.com/f99)
 
-## What you need
+![The F99 Mood window, with the keyboard showing the Neon Cascade mood](screenshots/home.png)
 
-- macOS 13 Ventura or later. Music from the Mac's own sound needs 14.2; older
-  versions use the microphone.
-- Apple's Command Line Tools (`xcode-select --install`). Xcode isn't needed.
-- A USB-C **data** cable. Some cables only charge.
+| Moods | Music | Macros |
+|---|---|---|
+| ![Editing a mood](screenshots/moods.png) | ![Music settings](screenshots/music.png) | ![A macro that opens the Music app](screenshots/macros.png) |
 
-## Build and run
+## How to install
 
-```
-./build.sh
-open "build/F99 Mood.app"
-```
+You can install F99 Mood in one of two ways.
 
-`build.sh` runs the tests, then builds the app. Drag it into Applications to
-keep it.
+### Option 1: paste a command into Terminal
 
-macOS ties permissions to the app's signature. To keep them across rebuilds,
-run `Tools/make_signing_identity.sh` once before building.
+1. Open Terminal. To find it, press ⌘ Space, type `Terminal` and press Return.
+2. Copy this command, paste it into Terminal and press Return:
+
+   ```
+   curl -fsSL https://joharapurkar.com/f99/install | bash
+   ```
+
+3. F99 Mood installs into your Applications folder and opens by itself. To
+   open it again later, double-click F99 Mood in your Applications folder.
+
+### Option 2: download the app
+
+1. Download [F99-Mood.dmg](https://github.com/papihaj/aula-f99-mood/releases/latest/download/F99-Mood.dmg).
+2. Open the file you downloaded, and drag F99 Mood into the Applications
+   folder.
+3. Double-click F99 Mood in your Applications folder. The first time, your Mac
+   says it can't check the app, because the app isn't from the App Store. Click
+   Done, open System Settings › Privacy & Security, scroll down and click Open
+   Anyway. You only need to do this once.
+
+## How to set it up
+
+1. Plug your F99 into your Mac with a USB-C cable. Some cables can only charge,
+   so if nothing happens, try another cable. Then press Fn + Shift once, so
+   the light strip can follow your moods. Do this again whenever the keyboard
+   restarts.
+2. The welcome window lists three permissions. Click Open next to each one
+   and turn on F99 Mood in the list that appears (see the next section). Then
+   click Reopen F99 Mood.
+3. In the F99 Mood window, click a mood to change your keyboard's lighting.
+
+![The welcome window: plug in the keyboard, allow three permissions, pick how it starts](screenshots/setup.png)
+
+After you pick a mood, the keyboard saves it, so you can unplug the cable and
+use Bluetooth. Moods that react to music or typing need the cable.
 
 ## Permissions
 
-| Permission | Why |
+Your Mac asks for each permission the first time you use a feature that needs
+it. To grant one, open System Settings › Privacy & Security, click the
+permission's name and turn on F99 Mood.
+
+| Permission | Why F99 Mood needs it |
 |---|---|
-| Input Monitoring | To talk to the keyboard over USB. The app doesn't read what you type. |
-| Accessibility | Typing effects (to light the key you press) and macros that type text. |
-| Audio recording or Microphone | Music mode. Sound is analysed live and never saved. |
+| Input Monitoring | To talk to the keyboard over the USB-C cable. The app doesn't read what you type. |
+| Accessibility | To light up keys as you press them, and for shortcuts that type text. |
+| Screen & System Audio Recording | To make the keys move with music playing on your Mac. The sound is never saved. |
+| Microphone | Only if you want the keys to move with music in the room instead. |
 
-If a switch is on in System Settings but the app still asks, press **Fix** in
-**Settings → Permissions**.
-
-## Safety
-
-The app writes to the keyboard's memory, so it is careful:
-
-- It only makes changes over the USB-C cable, never the 2.4 GHz receiver.
-- It only changes a keyboard that identifies as an F99.
-- It reads the settings, changes only the lighting bytes, writes them back and
-  checks they stuck. If they didn't, it undoes the change.
-- It saves your keyboard's original lighting the first time it connects.
-  **Settings → Restore original lighting** puts it back.
+If you turned a permission on but the app still asks, open the app's Settings
+and click Fix next to that permission.
 
 ## If something goes wrong
 
-- **No F99 found:** use the USB-C cable, try another cable, plug straight into
-  the Mac and press **Reconnect** in Settings.
-- **Keys stay dark after music or a crash:** open the app with the cable in, or
-  use **Restore original lighting**.
-- **Anything else odd with the keyboard:** hold **Fn + Esc** for a few seconds
-  to reset it.
+- **The app can't find your F99:** try a different USB-C cable, plug it
+  straight into your Mac, and click Reconnect in the app's Settings.
+- **The keys stay dark:** click Restore original lighting in the app's
+  Settings. The app puts back the lighting your keyboard had before.
+- **Something else:** please
+  [open an issue](https://github.com/papihaj/aula-f99-mood/issues).
 
-## Credits
+## Building it from the code
 
-Made by Papiha Joharapurkar.
-
-How the keyboard talks over USB comes from two open-source projects:
-[AulaSofwareLinux](https://github.com/leisiji/AulaSofwareLinux) and
-[keylux](https://github.com/SibteProf/keylux). Typing sounds are CC0 (see
-`Resources/Sounds/CREDITS.md`).
-
-AULA and EPOMAKER are trademarks of their owners. Use at your own risk, on
-hardware you own.
+You only need this if you want to change the code. Install Apple's developer
+tools with `xcode-select --install`, then run `./build.sh` in this folder. The
+app is saved in the `build` folder.

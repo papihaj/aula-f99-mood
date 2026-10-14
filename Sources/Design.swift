@@ -49,6 +49,9 @@ extension Mood {
     ]
 
     /// The colours to show for this mood.
+    /// Lights only where you type (Gaming), or shows its effect as you type.
+    var lightsWhenTyping: Bool { live?.drawsPresses ?? (lighting.effect == 12) }
+
     func swatch(custom: [RGB]) -> [Color] {
         if lighting.brightness == 0 { return [Color(white: 0.28), Color(white: 0.1)] }
         if live == .painted {
@@ -67,6 +70,11 @@ extension Mood {
         }
         if F99.effect(lighting.effect)?.hasColor != false, fixed {
             return MusicPalette.forMood(self).colors.map(\.color)
+        }
+        // Some effects show their "colourful" setting as soft pastels.
+        if F99.pastelEffects.contains(lighting.effect) {
+            return [0xff0000, 0xff8000, 0xffff00, 0x00ff00, 0x00ffff, 0x0000ff, 0x8000ff]
+                .map { RGB(hex: $0).mixed(with: RGB(1, 1, 1), 0.45).color }
         }
         return [Color.red, .orange, .yellow, .green, .cyan, .blue, .purple]
     }
@@ -227,5 +235,69 @@ struct StatusPill: View {
         case .searching: .yellow
         case .readOnly, .unavailable: .orange
         }
+    }
+}
+
+/// The app's colours, taken from the white F99 with periwinkle and lavender
+/// keys: a white window (or a deep violet-grey one in dark mode), lavender for
+/// buttons and selections. The keyboard picture stays white in both, like
+/// the real board.
+enum Theme {
+    /// A colour for light mode and one for dark mode.
+    static func adaptive(_ light: (Double, Double, Double), _ dark: (Double, Double, Double)) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let c = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
+        })
+    }
+
+    /// Text on the mood tiles: dark on the light theme's pastel tiles,
+    /// near-white on the dark theme's deep ones.
+    static let ink = adaptive((0.16, 0.14, 0.26), (0.96, 0.95, 1.0))
+    /// The side panel and chips.
+    static let panel = adaptive((1, 1, 1), (0.15, 0.14, 0.19))
+    /// Picked keys in the 3D view glow this colour.
+    static let pickedNS = NSColor(red: 0.55, green: 0.47, blue: 0.90, alpha: 1)
+    static let lavender = Color(red: 0.55, green: 0.47, blue: 0.90)
+    static let periwinkle = Color(red: 0.62, green: 0.74, blue: 0.93)
+    /// Behind the cards: white with a hint of lavender, or deep violet-grey.
+    static let page = adaptive((0.965, 0.96, 0.985), (0.10, 0.095, 0.13))
+
+    /// Keycap colours as RGB, so the picture can blend light into them.
+    static let whiteCap = RGB(0.975, 0.975, 0.99)
+    static let blueCap = RGB(0.66, 0.77, 0.94)
+    static let purpleCap = RGB(0.58, 0.50, 0.90)
+
+    /// Each key's cap, as on the white, periwinkle and lavender F99.
+    static func cap(for name: String) -> RGB {
+        switch name {
+        case "Esc", "Enter", "Space", "Up", "Down", "Left", "Right": return purpleCap
+        case "F5", "F6", "F7", "F8", "Delete", "Home", "End", "PgUp", "PgDn",
+             "Backspace", "NumLock", "Num /", "Num*", "Num-", "Num+",
+             "Tab", "CapsLock", "LShift", "RShift",
+             "LCtrl", "LWin", "LAlt", "RAlt", "FN", "RCtrl": return blueCap
+        default: return whiteCap
+        }
+    }
+}
+
+extension RGB {
+    /// A straight blend towards `o`; cheap enough for every key, every frame.
+    func lerp(_ o: RGB, _ t: Double) -> RGB {
+        RGB(r + (o.r - r) * t, g + (o.g - g) * t, b + (o.b - b) * t)
+    }
+}
+
+extension Color {
+    /// Mixed towards white by `amount` (0 keeps it, 1 is white).
+    func softened(_ amount: Double) -> Color { mixed(towards: (1, 1, 1), amount) }
+
+    /// Mixed towards the dark theme's background, for tiles in dark mode.
+    func deepened(_ amount: Double) -> Color { mixed(towards: (0.10, 0.095, 0.13), amount) }
+
+    private func mixed(towards t: (Double, Double, Double), _ amount: Double) -> Color {
+        guard let c = NSColor(self).usingColorSpace(.sRGB) else { return self }
+        func mix(_ v: CGFloat, _ to: Double) -> Double { Double(v) + (to - Double(v)) * amount }
+        return Color(red: mix(c.redComponent, t.0), green: mix(c.greenComponent, t.1), blue: mix(c.blueComponent, t.2))
     }
 }

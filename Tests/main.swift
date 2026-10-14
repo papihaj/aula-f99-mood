@@ -180,7 +180,7 @@ for mood in wiped.moods { wiped.deleteMood(mood.id) }
 check(wiped.moods.isEmpty && wiped.activeMoodID == nil, "every mood can be deleted")
 let reset = AppSettings.defaults
 check(reset.moods.map(\.name) == AppSettings.builtInMoods.map(\.name), "reset brings the built-in moods back")
-check(reset.moods.filter { $0.live == nil }.count == 6 && reset.moods.filter { $0.live != nil }.count == 7,
+check(reset.moods.filter { $0.live == nil }.count == 6 && reset.moods.filter { $0.live != nil }.count == 8,
       "reset fills both mood grids")
 // "Restore built-in moods" puts back only what's missing, keeping your own.
 var partial = AppSettings.defaults
@@ -257,16 +257,16 @@ let mid = blue.mixed(with: white, 0.5)
 check(mid.luminance > blue.luminance && mid.luminance < white.luminance, "blend in between")
 check(mid.b >= mid.r, "blue-to-white doesn't drift purple: \(mid)")
 
-// Tempo: kicks every 0.5 s, analysed every 12 ms like the app, lock to 120 BPM.
-let tempo = MusicAnalyzer(hop: 0.012)
+// Tempo: kicks every 0.5 s, analysed every 25 ms like the app, lock to 120 BPM.
+let tempo = MusicAnalyzer(hop: 0.025)
 let kick = (0..<2048).map { Float(sin(2 * Double.pi * 60 * Double($0) / 48_000)) * 0.6 }
 let hush = (0..<2048).map { Float(sin(2 * Double.pi * 3000 * Double($0) / 48_000)) * 0.003 }
 var last = MusicSnapshot(bands: [], level: 0, bass: 0, beat: false)
 var tempoBeats = 0
-let callsPerKick = Int((0.5 / 0.012).rounded())
+let callsPerKick = Int((0.5 / 0.025).rounded())
 for call in 0..<(callsPerKick * 20) { // 10 seconds
     // A kick lasts ~0.1 s.
-    last = tempo.analyze(call % callsPerKick < 8 ? kick : hush, sampleRate: 48_000)
+    last = tempo.analyze(call % callsPerKick < 4 ? kick : hush, sampleRate: 48_000)
     if last.beat { tempoBeats += 1 }
 }
 check(tempoBeats >= 16 && tempoBeats <= 22, "one beat per kick: \(tempoBeats)")
@@ -277,8 +277,18 @@ check(abs(last.bpm - 120) < 6, "tempo locks to 120 BPM: \(last.bpm)")
 let calmMood = AppSettings.defaults.moods.first { $0.name == "Ocean Waves" }!   // cyan sine wave
 let calmPalette = MusicPalette.forMood(calmMood)
 check(calmPalette.colors.allSatisfy { $0.r < 0.75 && $0.b > 0.3 && $0.b >= $0.r }, "Calm dances in cyan shades: \(calmPalette.colors)")
-let partyMood = AppSettings.defaults.moods.first { $0.name == "Rainbow Wheel" }!  // colourful
-check(MusicPalette.forMood(partyMood).colors.count == 6, "Rainbow Wheel dances in rainbow")
+let partyMood = AppSettings.defaults.moods.first { $0.name == "Rainbow" }!  // colourful
+check(MusicPalette.forMood(partyMood).colors.count == 6, "Rainbow dances in rainbow")
+
+// Rainbow wheel (effect 6) leaves the keys dark, so old moods move to effect 3.
+var wheel = AppSettings.defaults
+wheel.moodsVersion = 8
+if let i = wheel.moods.firstIndex(where: { $0.name == "Rainbow" }) {
+    wheel.moods[i].name = "Rainbow Wheel"; wheel.moods[i].lighting.effect = 6
+}
+wheel.upgradeMoods()
+check(wheel.moods.filter { $0.name == "Rainbow" }.count == 1 && !wheel.moods.contains { $0.name == "Rainbow Wheel" }
+      && !wheel.moods.contains { $0.lighting.effect == 6 }, "Rainbow Wheel becomes Rainbow")
 
 // A dim mood dims the music.
 let dim = MusicRenderer(), full = MusicRenderer()
@@ -319,7 +329,8 @@ check(Set(keys).count == keys.count, "mood shortcuts unique")
 check(built.allSatisfy { $0.live.map(LiveEffect.offered.contains) ?? F99.offeredEffects.contains($0.lighting.effect) },
       "moods use offered effects")
 // Each grid fits in two rows of four, counting the "New mood" tile.
-check(built.filter { $0.live == nil }.count <= 7 && built.filter { $0.live != nil }.count <= 7, "short mood grids")
+// The user chose to allow an eighth live tile for Pastel Ripples.
+check(built.filter { $0.live == nil }.count <= 7 && built.filter { $0.live != nil }.count <= 8, "short mood grids")
 
 // Upgrading saved moods: unedited old ones go, edited and custom ones stay,
 // new ones arrive, and nothing ends up with a clashing shortcut.
@@ -333,8 +344,8 @@ var old = AppSettings(moods: [
 old.upgradeMoods()
 let names = old.moods.map(\.name)
 check(!names.contains("Calm") && names.contains("Cozy") && names.contains("Mine"), "upgrade keeps your moods: \(names)")
-check(names.contains("Ocean Waves") && names.firstIndex(of: "Ocean Waves")! < names.firstIndex(of: "Lights out")!,
-      "upgrade adds new keyboard moods before Lights out")
+check(names.contains("Ocean Waves") && !names.contains("Lights out"),
+      "upgrade adds new keyboard moods, and the Off button replaces Lights out")
 check(names.contains("Matrix") && names.contains("Typing Heatmap"), "upgrade adds live moods")
 let upgradedKeys = old.moods.compactMap(\.hotkey)
 check(Set(upgradedKeys).count == upgradedKeys.count, "no clashing shortcuts after upgrade")
@@ -436,8 +447,9 @@ for i in 0..<60 {
 }
 check(litDimmest >= 40, "keys stay lit with the floor on: \(litDimmest)")
 
-// A new user gets no one else's choices: no start-up mood, no macros.
-check(AppSettings.defaults.startupMoodID == nil && AppSettings.defaults.macros.isEmpty, "clean defaults")
+// A new user gets no one else's choices: no start-up mood, and only the
+// example macro.
+check(AppSettings.defaults.startupMoodID == nil && AppSettings.defaults.macros.map(\.name) == ["Open Music"], "clean defaults")
 
 // Settings from older and newer versions load without losing anything.
 let oldJSON = """
@@ -526,6 +538,10 @@ let extrasBack = try! JSONDecoder().decode(AppSettings.self, from: Storage.encod
 check(extrasBack.schedule == plan && extrasBack.keySound == .clicky && extrasBack.alertFlashes == 4, "extras fullTurn-trip")
 let wild = try! JSONDecoder().decode(AppSettings.self, from: #"{"moods":[],"alertFlashes":99,"keySound":"Kazoo","keySoundVolume":7}"#.data(using: .utf8)!)
 check(wild.alertFlashes == 6 && wild.keySound == .tactile && wild.keySoundVolume == 1, "odd values clamped or defaulted")
+for sound in KeySound.allCases where sound != .custom {
+    let takes = (try? FileManager.default.contentsOfDirectory(atPath: "Resources/Sounds/\(sound.folder!)")) ?? []
+    check(takes.filter { $0.hasSuffix(".wav") }.count == 10, "\(sound.rawValue) has its 10 recorded takes")
+}
 
 // Painted moods: the built-in WASD paints W and keeps its colours through
 // a save; the renderer shows painted keys and the base colour.
@@ -540,7 +556,7 @@ let pFrame = painter.render()
 let qKey = F99.keys.first { $0.name == "Q" }!.led
 check(pFrame[wLED * 3 + 2] > 150 && pFrame[wLED * 3] < 10, "painted key is blue")
 check(pFrame[qKey * 3] == 0 && pFrame[qKey * 3 + 2] == 0, "unpainted key is off")
-check(AppSettings.moodsVersion == 8, "moods version bumped")
+check(AppSettings.moodsVersion == 11, "moods version bumped")
 var oldUser = AppSettings.defaults
 oldUser.moods.removeAll { $0.name == "WASD" }; oldUser.moodsVersion = 5
 oldUser.upgradeMoods()
@@ -601,5 +617,24 @@ v7.upgradeMoods()
 let v7names = v7.moods.map(\.name)
 check(!v7names.contains("Scanner") && v7.activeMoodID == nil, "Scanner retired, active mood cleared")
 check(v7names.contains("Storm") && v7names.contains("Comet"), "edited and start-up moods kept in v8")
+
+// The light bar: older yes/no files become a style; new files keep theirs.
+func stripStyle(_ json: String) -> AppSettings {
+    try! JSONDecoder().decode(AppSettings.self, from: Data("{\"moods\":[]\(json)}".utf8))
+}
+check(stripStyle("").stripStyle == .match && stripStyle(",\"stripFollowsColors\":true").stripStyle == .match, "light bar matches by default")
+check(stripStyle(",\"stripFollowsColors\":false").stripStyle == .off, "an old 'don't match' file turns the bar off")
+let oneColour = stripStyle(",\"stripStyle\":\"One colour\",\"stripColor\":42")
+check(oneColour.stripStyle == .color && oneColour.stripColor == F99.colors.count - 1, "one-colour bar loads, colour kept in range")
+let barRoundTrip = try! JSONDecoder().decode(AppSettings.self, from: Storage.encode(oneColour))
+check(barRoundTrip.stripStyle == .color, "light bar style round-trips")
+
+// Painted keys stay their colour over any live effect.
+let overlay = LiveRenderer()
+overlay.effect = .aurora
+let wKey = F99.keys.first { $0.name == "W" }!
+overlay.paint = [wKey.led: RGB(1, 0, 0)]
+let overlayFrame = overlay.render()
+check(overlayFrame[wKey.led * 3] > 200 && overlayFrame[wKey.led * 3 + 1] < 20 && overlayFrame[wKey.led * 3 + 2] < 20, "paint shows over a live effect")
 
 if failures == 0 { print("All tests passed.") } else { print("\(failures) test(s) failed."); exit(1) }

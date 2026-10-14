@@ -60,10 +60,12 @@ enum F99 {
     static func effect(_ id: Int) -> Effect? { effects.first { $0.id == id } }
 
     /// The effects the mood editor offers: one of each kind of movement
-    /// (Fixed on, Breathing, Rainbow wheel, Stars twinkle, Reaction, Sine
-    /// wave). The rest look like one of these, so they're left out to keep the
-    /// list short; the keyboard still has them under Fn + \.
-    static let offeredEffects = [1, 2, 6, 8, 12, 13]
+    /// (Fixed on, Breathing, Raindrops, Ripples shining, Stars twinkle, Neon
+    /// stream, Reaction, Sine wave).
+    /// The rest look like one of these, so they're left out to keep the list
+    /// short; the keyboard still has them under Fn + \. Rainbow wheel (6)
+    /// leaves the keys dark on a real F99, so it's never offered.
+    static let offeredEffects = [1, 2, 5, 7, 8, 11, 12, 13]
 
     struct FirmwareColor: Identifiable, Hashable {
         let id: Int
@@ -85,6 +87,9 @@ enum F99 {
         FirmwareColor(id: 6, name: "White", rgb: (1, 1, 1)),
     ]
     static let colorful = 7
+    /// Effects whose "colourful" setting is soft pastel on a real F99, not a
+    /// full rainbow: Flash away, Raindrops, Ripples shining, Retro snake.
+    static let pastelEffects: Set<Int> = [4, 5, 7, 10]
 
     /// The light strip between Backspace and Num Lock isn't part of the live
     /// colour frame (it stays put while every free slot is set) and AULA's own

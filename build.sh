@@ -26,7 +26,7 @@ for arch in $ARCH_LIST; do
     -target "$arch-apple-macos13.0" \
     Sources/*.swift \
     -framework IOKit -framework Carbon -framework AppKit -framework SwiftUI \
-    -framework CoreAudio -framework AVFoundation -framework Accelerate -framework EventKit \
+    -framework CoreAudio -framework AVFoundation -framework Accelerate -framework EventKit -framework SceneKit \
     -o "build/F99Mood-$arch"
 done
 lipo -create build/F99Mood-${^ARCH_LIST} -output "$APP/Contents/MacOS/F99Mood"

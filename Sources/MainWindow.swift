@@ -1,12 +1,42 @@
 import SwiftUI
+import AVFoundation
 
 /// The main window: a live picture of the F99, moods, and music controls.
 struct MainView: View {
     @EnvironmentObject var model: AppModel
+    /// Remembered for this Mac only; the picture is the same either way.
+    @AppStorage("keyboardIn3D") private var in3D = false
     var body: some View {
+        HStack(spacing: 0) {
+            page
+            // Only there while something is picked, like an inspector.
+            if model.inspecting != nil {
+                Divider()
+                HomePanel().transition(.move(edge: .trailing))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: model.inspecting)
+        .background(Theme.page)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                NewMoodMenu()
+                MoreMoodsMenu()
+            }
+        }
+        .sheet(isPresented: Binding(get: { !model.settings.welcomeDone },
+                                    set: { if !$0 { model.settings.welcomeDone = true } })) {
+            WelcomeView().environmentObject(model)
+        }
+    }
+
+    private var page: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 StatusPill()
+                Button { model.turnOff() } label: { Label("Off", systemImage: "power") }
+                    .controlSize(.small)
+                    .disabled(model.isOff)
+                    .help("Turn the keyboard's lights off. Pick any mood to turn them back on.")
                 if model.darkened || model.idleDimmed {
                     Label(model.darkened ? "Lights off while locked" : "Dimmed while you're away",
                           systemImage: "moon.zzz.fill").font(.caption).foregroundStyle(.secondary)
@@ -35,18 +65,41 @@ struct MainView: View {
             }
 
             Card(padding: 12) {
-                // Always the same size, whatever is below it.
-                KeyboardPicture()
-                    .frame(width: 600, height: 600 * F99.boardSize.h / F99.boardSize.w)
-                    .padding(12)
-                    .frame(maxWidth: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .underPageBackgroundColor)))
-                Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                if let mood = model.activeMood, !model.musicOn {
-                    Divider()
-                    RemixBar(mood: mood)
+                // Grows with the window, up to a comfortable size.
+                Group {
+                    if in3D {
+                        Keyboard3D().aspectRatio(2.5, contentMode: .fit).frame(minWidth: 0, maxWidth: .infinity)
+                    } else {
+                        KeyboardPicture.inCase(KeyboardPicture()
+                            .aspectRatio(F99.boardSize.w / F99.boardSize.h, contentMode: .fit))
+                    }
+                }
+                .frame(maxWidth: in3D ? 980 : 760)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity)
+                HStack {
+                    Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Spacer()
+                    Text(in3D ? "Click keys or the light bar · drag to turn · scroll to zoom · double-click to reset"
+                              : "Click keys or the light bar to change them")
+                        .font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                    if let mood = model.activeMood, !model.musicOn {
+                        Button { model.selectedKeys = []; model.inspecting = model.inspecting == .mood ? nil : .mood } label: {
+                            Label("Colours", systemImage: "paintpalette")
+                        }
+                        .controlSize(.small)
+                        .help("Change \(mood.name)'s colours")
+                    }
+                    Picker("View", selection: $in3D) {
+                        Text("2D").tag(false)
+                        Text("3D").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .controlSize(.small)
                 }
             }
+            // The picture gets its room first; the mood tiles scroll.
+            .layoutPriority(1)
 
             if case .unavailable = model.status { WirelessNote() }
             if model.needsAccessibility { AccessibilityBanner(compact: false) }
@@ -73,12 +126,7 @@ struct MainView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 700, minHeight: 680)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(isPresented: Binding(get: { !model.settings.welcomeDone },
-                                    set: { if !$0 { model.settings.welcomeDone = true } })) {
-            WelcomeView().environmentObject(model)
-        }
+        .frame(minWidth: 640, minHeight: 680)
     }
 
     @ViewBuilder
@@ -91,7 +139,6 @@ struct MainView: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: 10)], spacing: 10) {
                     ForEach(moods) { MoodButton(mood: $0) }
-                    NewMoodTile(live: moods.first?.live != nil)
                 }
             }
         }
@@ -102,10 +149,58 @@ struct MainView: View {
     private var caption: String {
         let preview = model.canWrite ? "" : " · preview, plug in by USB-C"
         if model.musicOn { return "Dancing · \(model.settings.musicStyle.rawValue)" + preview }
-        if let mood = model.liveMood ?? model.activeMood { return mood.name + preview }
+        if model.busy && model.canWrite { return "Sending to the keyboard. This takes a second." }
+        if let mood = model.liveMood ?? model.activeMood {
+            if !model.canWrite { return mood.name + preview }
+            if mood.lightsWhenTyping { return mood.name + " · press a few keys to see it" }
+            if mood.live != nil { return mood.name + " · if the keys stay dark, press any key" }
+            return mood.name
+        }
         if let l = model.shownLighting, let effect = F99.effect(l.effect) { return effect.name + preview }
         return "Pick a mood"
     }
+}
+
+/// What the keyboard pictures (2D and 3D) show.
+extension AppModel {
+    /// Nothing moves: a steady or switched-off mood with no live effect or music.
+    var pictureIsStill: Bool {
+        if liveMood != nil || musicOn { return false }
+        guard let l = shownLighting else { return true }
+        return l.brightness == 0 || l.effect == 1
+    }
+
+    /// The strip's colour as the app expects it: what the keyboard reports,
+    /// or, without a keyboard, what the current theme or mood would set.
+    var pictureStripColor: F99.FirmwareColor? {
+        var id: Int?
+        if stripAlert != nil {
+            id = settings.stripAlertColor
+        } else if settings.stripStyle == .off {
+            return nil
+        } else if settings.stripStyle == .color {
+            id = settings.stripColor
+        } else if musicOn {
+            id = musicMood.map { $0.lighting.color } ?? settings.musicPalette.stripColor
+        } else if let mood = activeMood, mood.lighting.color < F99.colorful {
+            id = mood.lighting.color
+        }
+        if canWrite, let page, id == nil || page.stripColor == id {
+            id = page.stripColor
+        }
+        return F99.colors.first { $0.id == id }
+    }
+
+    /// The light under a key, as 0...1 RGB (black when it's dark).
+    func light(for key: F99.Key, time: Double) -> RGB {
+        if let frame = streamFrame, key.led * 3 + 2 < frame.count {
+            return RGB(Double(frame[key.led * 3]) / 255, Double(frame[key.led * 3 + 1]) / 255,
+                       Double(frame[key.led * 3 + 2]) / 255)
+        }
+        guard let l = shownLighting else { return RGB(0, 0, 0) }
+        return LightingSimulator.light(for: key, lighting: l, time: time)
+    }
+
 }
 
 /// Draws the F99 from its real key positions and colours each key.
@@ -117,94 +212,138 @@ struct KeyboardPicture: View {
     @EnvironmentObject var model: AppModel
     /// `.inactive` while another app is in front.
     @Environment(\.controlActiveState) private var activeState
+    /// While dragging across keys: true adds the keys passed over, false
+    /// takes them off (a ⌘-drag that started on a picked key).
+    @StateObject private var dragAdds = ViewState<Bool?>(nil)
 
-    /// Nothing moves: a steady or switched-off mood with no live effect or music.
-    private var isStill: Bool {
-        if model.liveMood != nil || model.musicOn { return false }
-        guard let l = model.shownLighting else { return true }
-        return l.brightness == 0 || l.effect == 1
+    private func drag(at p: CGPoint, start: CGPoint, scale: Double) {
+        let hit = PictureHit.at(p, scale: scale)
+        guard let adds = dragAdds.value else {
+            // The first touch.
+            let flags = NSEvent.modifierFlags
+            let adding = flags.contains(.command) || flags.contains(.shift)
+            if case .key(let led) = hit {
+                dragAdds.value = !(adding && model.selectedKeys.contains(led))
+            } else {
+                dragAdds.value = true
+            }
+            model.clickPicture(hit, adding: adding)
+            return
+        }
+        guard case .key(let led) = hit, case .key = PictureHit.at(start, scale: scale) else { return }
+        if adds, !model.selectedKeys.contains(led) {
+            model.selectedKeys.insert(led)
+        } else if !adds, model.selectedKeys.contains(led) {
+            model.selectedKeys.remove(led)
+        }
+        model.inspecting = model.selectedKeys.isEmpty ? nil : .keys
     }
 
     var body: some View {
-        // The colours change every frame; the key labels and outlines don't,
-        // so they're a separate layer drawn only when the size changes.
-        // 12 frames a second is smooth enough for a preview, and it stops
-        // while another app is in front or nothing is moving, to save CPU.
+        // The light changes every frame; the key legends don't, so they're a
+        // separate layer drawn only when the size changes. 20 frames a second
+        // looks smooth and costs little (drawing takes well under a
+        // millisecond); it stops while another app is in front or nothing is
+        // moving, to save CPU.
         ZStack {
-            TimelineView(.animation(minimumInterval: 1 / 12, paused: isStill || activeState == .inactive)) { context in
+            TimelineView(.animation(minimumInterval: 1 / 20, paused: model.pictureIsStill || activeState == .inactive)) { context in
                 Canvas { gc, size in
                     let scale = min(size.width / F99.boardSize.w, size.height / F99.boardSize.h)
                     let t = context.date.timeIntervalSinceReferenceDate
+                    let lights = F99.keys.map { model.light(for: $0, time: t) }
                     drawStrip(gc, scale)
-                    for key in F99.keys {
-                        let shape = RoundedRectangle(cornerRadius: 4 * scale).path(in: F99.keyRect(key, scale))
-                        // Keycap, then the light shining through it.
-                        gc.fill(shape, with: .color(Color(white: 0.98)))
-                        gc.fill(shape, with: .color(color(for: key, time: t).opacity(0.85)))
+                    // Light spilling onto the plate around each lit key, under the caps.
+                    for (key, light) in zip(F99.keys, lights) {
+                        let a = max(light.r, light.g, light.b)
+                        guard a > 0.03 else { continue }
+                        let hue = Color(red: light.r / a, green: light.g / a, blue: light.b / a)
+                        let rect = F99.keyRect(key, scale)
+                        gc.fill(RoundedRectangle(cornerRadius: 7 * scale).path(in: rect.insetBy(dx: -4 * scale, dy: -4 * scale)),
+                                with: .color(hue.opacity(0.35 * a)))
+                        gc.fill(RoundedRectangle(cornerRadius: 5 * scale).path(in: rect.insetBy(dx: -1.8 * scale, dy: -1.8 * scale)),
+                                with: .color(hue.opacity(0.75 * a)))
+                    }
+                    for (key, light) in zip(F99.keys, lights) {
+                        drawCap(gc, key, light: light, scale: scale)
                     }
                 }
             }
             Canvas { gc, size in
                 let scale = min(size.width / F99.boardSize.w, size.height / F99.boardSize.h)
                 for key in F99.keys {
-                    let rect = F99.keyRect(key, scale)
-                    gc.stroke(RoundedRectangle(cornerRadius: 4 * scale).path(in: rect),
-                              with: .color(.black.opacity(0.18)), lineWidth: 0.8)
-                    Self.drawLabel(gc, key, in: rect, scale: scale, color: .black.opacity(0.75))
+                    Self.drawLabel(gc, key, in: Self.face(F99.keyRect(key, scale), scale), scale: scale,
+                                   color: Color(red: 0.30, green: 0.28, blue: 0.42).opacity(0.85))
+                }
+                // What's picked, outlined in lavender.
+                for key in F99.keys where model.selectedKeys.contains(key.led) {
+                    let rect = F99.keyRect(key, scale).insetBy(dx: -1.5, dy: -1.5)
+                    gc.stroke(RoundedRectangle(cornerRadius: 6 * scale).path(in: rect), with: .color(Theme.lavender), lineWidth: 2.2)
+                }
+                if model.inspecting == .light {
+                    let f = F99.stripFrame
+                    let rect = CGRect(x: f.x * scale, y: f.y * scale, width: f.w * scale, height: f.h * scale).insetBy(dx: -3.5, dy: -3.5)
+                    gc.stroke(Capsule().path(in: rect), with: .color(Theme.lavender), lineWidth: 2.2)
                 }
             }
             .allowsHitTesting(false)
         }
+        .overlay(GeometryReader { geo in
+            let scale = min(geo.size.width / F99.boardSize.w, geo.size.height / F99.boardSize.h)
+            Color.clear.contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                    drag(at: value.location, start: value.startLocation, scale: scale)
+                }.onEnded { _ in dragAdds.value = nil })
+        })
         .accessibilityElement()
         .accessibilityLabel("Picture of your keyboard's lighting")
     }
 
-    /// The light strip, in the gap right of Backspace and left of Num Lock,
-    /// above the Up arrow, in its saved colour (the keyboard animates its
-    /// own style).
+    /// The keyboard in its white case, the way it sits on a desk.
+    static func inCase<V: View>(_ picture: V) -> some View {
+        picture
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(red: 0.93, green: 0.93, blue: 0.95)))
+            // The F99's case: a thin white rim, a little deeper at the front.
+            .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 18)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.white)
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.black.opacity(0.08)))
+                .shadow(color: .black.opacity(0.10), radius: 14, y: 6))
+    }
+
+    /// The top of a keycap: the rect inside its sloped sides.
+    static func face(_ rect: CGRect, _ scale: Double) -> CGRect {
+        CGRect(x: rect.minX + 2.5 * scale, y: rect.minY + 1.5 * scale,
+               width: rect.width - 5 * scale, height: rect.height - 5 * scale)
+    }
+
+    /// A keycap in its own colour, tinted by the light shining through it.
+    private func drawCap(_ gc: GraphicsContext, _ key: F99.Key, light: RGB, scale: Double) {
+        let rect = F99.keyRect(key, scale)
+        let cap = Theme.cap(for: key.name)
+        let a = max(light.r, light.g, light.b)
+        let lit = a > 0.01 ? RGB(light.r / a, light.g / a, light.b / a) : cap
+        // The caps keep their own colour, so the board still looks like yours;
+        // the light tints them and shows most around their edges.
+        let face = cap.lerp(lit, 0.35 * a)
+        let side = RGB(face.r * 0.86, face.g * 0.86, face.b * 0.9)
+        gc.fill(RoundedRectangle(cornerRadius: 5 * scale).path(in: rect), with: .color(side.color))
+        gc.fill(RoundedRectangle(cornerRadius: 4 * scale).path(in: Self.face(rect, scale)), with: .color(face.color))
+    }
+
+    /// The light strip, the short slot right of Backspace and Delete, in its
+    /// saved colour (the keyboard animates its own style).
     private func drawStrip(_ gc: GraphicsContext, _ scale: Double) {
-        guard let back = F99.keys.first(where: { $0.name == "Backspace" }),
-              let numLock = F99.keys.first(where: { $0.name == "NumLock" }),
-              let up = F99.keys.first(where: { $0.name == "Up" }) else { return }
-        let left = back.frame.x + back.frame.w, right = numLock.frame.x
-        let width = max(4, (right - left) * 0.35)
-        let x = (left + right) / 2 - width / 2
-        let top = 4.0 // level with the top row of keys
-        let bottom = up.frame.y - 4
-        let rect = CGRect(x: x * scale, y: top * scale, width: width * scale, height: (bottom - top) * scale)
+        let f = F99.stripFrame
+        let rect = CGRect(x: f.x * scale, y: f.y * scale, width: f.w * scale, height: f.h * scale)
         let shape = Capsule().path(in: rect)
         gc.fill(shape, with: .color(Color(white: 0.85)))
-        if let c = stripColor {
+        if let c = model.pictureStripColor {
             gc.fill(shape, with: .color(Color(red: c.rgb.0, green: c.rgb.1, blue: c.rgb.2).opacity(0.85)))
         }
         gc.stroke(shape, with: .color(.black.opacity(0.2)), lineWidth: 0.8)
-    }
-
-    /// The strip's colour as the app expects it: what the keyboard reports,
-    /// or, without a keyboard, what the current theme or mood would set.
-    private var stripColor: F99.FirmwareColor? {
-        var id: Int?
-        if model.settings.stripFollowsColors {
-            if model.musicOn {
-                id = model.musicMood.map { $0.lighting.color } ?? model.settings.musicPalette.stripColor
-            } else if let mood = model.activeMood, mood.lighting.color < F99.colorful {
-                id = mood.lighting.color
-            }
-        }
-        if model.canWrite, let page = model.page, id == nil || model.page?.stripColor == id {
-            id = page.stripColor
-        }
-        return F99.colors.first { $0.id == id }
-    }
-
-    private func color(for key: F99.Key, time: Double) -> Color {
-        if let frame = model.streamFrame, key.led * 3 + 2 < frame.count {
-            return Color(red: Double(frame[key.led * 3]) / 255,
-                         green: Double(frame[key.led * 3 + 1]) / 255,
-                         blue: Double(frame[key.led * 3 + 2]) / 255)
-        }
-        guard let l = model.shownLighting else { return .clear }
-        return LightingSimulator.color(for: key, lighting: l, time: time)
     }
 
     /// Draw a key's legend in its top-left corner: the longest version
@@ -268,10 +407,10 @@ struct KeyboardPicture: View {
 /// keyboard draws the real ones itself, so these are approximations of what
 /// each looks like, based on the effect names.
 enum LightingSimulator {
-    static func color(for key: F99.Key, lighting l: ConfigPage.Lighting, time t: Double) -> Color {
-        guard let effect = F99.effect(l.effect) else { return .clear }
+    static func light(for key: F99.Key, lighting l: ConfigPage.Lighting, time t: Double) -> RGB {
+        guard let effect = F99.effect(l.effect) else { return RGB(0, 0, 0) }
         let brightness = Double(min(max(l.brightness, 0), 4)) / 4
-        guard brightness > 0 else { return .clear }
+        guard brightness > 0 else { return RGB(0, 0, 0) }
         // Calmer than the keyboard itself, so the window isn't busy.
         let speed = (0.4 + Double(l.speed) * 0.4) * 0.6
         let ts = t * speed
@@ -286,8 +425,9 @@ enum LightingSimulator {
         let rainbow = !effect.hasColor || l.color == F99.colorful
         func fixed(_ hue: Double) -> (Double, Double, Double) {
             if !rainbow, let c = F99.colors.first(where: { $0.id == l.color }) { return c.rgb }
-            let h = hue - floor(hue)
-            return rgb(hue: h)
+            let (r, g, b) = rgb(hue: hue - floor(hue))
+            guard F99.pastelEffects.contains(effect.id) else { return (r, g, b) }
+            return (0.55 + 0.45 * r, 0.55 + 0.45 * g, 0.55 + 0.45 * b)
         }
 
         var hue = x * 0.8 + ts * 0.08
@@ -297,8 +437,8 @@ enum LightingSimulator {
             break
         case 2: // Breathing
             v = 0.12 + 0.88 * pow(0.5 + 0.5 * sin(ts * 2), 1.5)
-        case 3: // Rainbow: hues sweep across
-            hue = x - ts * 0.15
+        case 3: // Rainbow: the whole board changes colour together
+            hue = ts * 0.15
         case 4: // Flash away: the board flashes, then fades
             let p = (ts * 0.6).truncatingRemainder(dividingBy: 1)
             v = pow(1 - p, 3)
@@ -308,7 +448,7 @@ enum LightingSimulator {
             hue = Double(hash(key.led, Int(ts * 0.9))) / 97
         case 6: // Rainbow wheel: hues turn around the centre
             hue = angle - ts * 0.15
-        case 7: // Ripples shining: rings from the centre
+        case 7: // Ripples shining: rings from the keys you press; shown from the centre
             v = 0.12 + 0.88 * pow(0.5 + 0.5 * sin(dist * 9 - ts * 4), 4)
             hue = dist * 0.4 - ts * 0.1
         case 8: // Stars twinkle: soft, sparse twinkles
@@ -324,11 +464,10 @@ enum LightingSimulator {
             var gap = head - pos
             if gap < 0 { gap += 1 }
             v = gap < 0.12 ? 1 - gap / 0.12 : 0.04
-        case 11: // Neon stream: bands of colour flowing sideways
-            hue = x * 1.5 - ts * 0.3
-            v = 0.5 + 0.5 * sin((x - ts * 0.3) * 12)
-        case 12: // Reaction: lights where you type; shown as a soft glow
-            v = 0.15 + 0.85 * drop(key.led, ts, rate: 2.5) * 0.7
+        case 11: // Neon stream: a rainbow wave across the whole board
+            hue = x - ts * 0.3
+        case 12: // Reaction: dark until you type; only pressed keys light
+            v = 0.04
         case 13: // Sine wave: a wave rolling across
             let wave = 0.5 + 0.4 * sin(x * 9 - ts * 3)
             v = 0.1 + 0.9 * max(0, 1 - abs((1 - y) - wave) * 3)
@@ -350,9 +489,10 @@ enum LightingSimulator {
             break
         }
 
+        // Dim keys go dark, and the picture shows the bare keycap.
         let (r, g, b) = fixed(hue)
         let level = max(0, min(v, 1)) * brightness
-        return Color(red: r, green: g, blue: b).opacity(level)
+        return RGB(r * level, g * level, b * level)
     }
 
     /// A key that lights now and then and fades: 1 at the start of its
@@ -400,9 +540,19 @@ struct NotHearingBanner: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Button("Open Settings") {
-                let pane = model.settings.musicInput == .system ? "Privacy_AudioCapture" : "Privacy_Microphone"
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
+            Button("Turn on…") {
+                // Already allowed: just show the list, don't clear it.
+                if model.settings.musicInput == .system {
+                    if SystemAudioAccess.allowed == true { PrivacyPane.open("Privacy_AudioCapture") }
+                    else { PrivacyPane.turnOn(service: "AudioCapture", pane: "Privacy_AudioCapture") { SystemAudioAccess.request() } }
+                } else {
+                    if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized { PrivacyPane.open("Privacy_Microphone") }
+                    else {
+                        PrivacyPane.turnOn(service: "Microphone", pane: "Privacy_Microphone") {
+                            AVCaptureDevice.requestAccess(for: .audio) { _ in }
+                        }
+                    }
+                }
             }
         }
         .padding(10)
@@ -421,42 +571,6 @@ struct MusicMeterView: View {
             .accessibilityLabel("Music level")
         Text(meter.bpm > 0 ? "\(Int(meter.bpm)) BPM" : "listening…")
             .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-    }
-}
-
-/// The last tile in a group: make a new mood and open it in the editor.
-struct NewMoodTile: View {
-    @EnvironmentObject var model: AppModel
-    let live: Bool
-
-    var body: some View {
-        Menu {
-            Button("Keyboard effect") { make(.keyboard) }
-            Button("Live effect") { make(.live) }
-            Button("Painted keys") { make(.painted) }
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "plus").font(.system(size: 16, weight: .semibold))
-                Text("New mood").font(.system(size: 12, weight: .medium))
-            }
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .frame(height: 68)
-            .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])))
-            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        } primaryAction: {
-            make(live ? .live : .keyboard)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .help("Click for a new \(live ? "live" : "keyboard-effect") mood; hold for other kinds")
-        .accessibilityLabel("New mood")
-    }
-
-    private func make(_ kind: AppModel.NewMoodKind) {
-        model.createMood(kind) // switches the sidebar to Moods
     }
 }
 

@@ -135,8 +135,8 @@ final class MusicAnalyzer {
     /// Below this RMS level the music counts as silence (noise gate).
     private let squelch: Float = 0.0015
 
-    /// `hop` is the time between calls. The app calls about 80 times a second
-    /// so beats land within ~12 ms, while the lights update 20 times a second.
+    /// `hop` is the time between calls. The app calls 40 times a second, so
+    /// beats land within 25 ms, while the lights update 20 times a second.
     init(hop: Float = 0.05) {
         dt = hop
         fft = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
@@ -422,7 +422,14 @@ struct MusicPalette: Codable, Hashable, Identifiable {
         MusicPalette(name: "Classic", colors: [RGB(hex: 0x00ff00), RGB(hex: 0xffff00), RGB(hex: 0xff0000)]),
         MusicPalette(name: "Rainbow", colors: [RGB(hex: 0xff0000), RGB(hex: 0xffff00), RGB(hex: 0x00ff00),
                                                RGB(hex: 0x00ffff), RGB(hex: 0x0000ff), RGB(hex: 0xff00ff)]),
+        pastel,
     ]
+
+    /// Soft colours, like the keyboard's own pastel effects: pink, peach,
+    /// lemon, mint, sky, lavender. Paler than this turns white on the LEDs.
+    static let pastel = MusicPalette(name: "Pastel", colors: [
+        RGB(hex: 0xff5c9d), RGB(hex: 0xff9a4d), RGB(hex: 0xffe14d),
+        RGB(hex: 0x4dff9a), RGB(hex: 0x4dc3ff), RGB(hex: 0xa070ff)])
     static let customName = "Custom"
 
     /// Electric and Neon together, ordered so they flow into each other:
