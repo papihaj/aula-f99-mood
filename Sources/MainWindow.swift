@@ -47,6 +47,7 @@ struct MainView: View {
                         Text(alert).lineLimit(1)
                         Button { model.clearAlert() } label: { Image(systemName: "xmark.circle.fill") }
                             .buttonStyle(.borderless).foregroundStyle(.secondary).help("Clear the alert")
+                            .accessibilityLabel("Clear the alert")
                     }
                     .font(.caption.weight(.medium))
                     .padding(.horizontal, 9).padding(.vertical, 4)

@@ -37,7 +37,12 @@ rm -f build/F99Mood-${^ARCH_LIST}
 # with a stable certificate when there is one: Tools/make_signing_identity.sh
 # makes one, or set SIGN_IDENTITY to your own (e.g. a Developer ID).
 IDENTITY="${SIGN_IDENTITY:-F99 Mood Local Signing}"
-if security find-identity -p codesigning | grep -q "$IDENTITY"; then
+if [[ "$IDENTITY" == "Developer ID Application"* ]]; then
+  # A release: the hardened runtime and a secure timestamp, which Apple's
+  # notarization requires.
+  codesign --force --options runtime --timestamp --entitlements Entitlements.plist \
+    --sign "$IDENTITY" "$APP"
+elif security find-identity -p codesigning | grep -q "$IDENTITY"; then
   codesign --force --sign "$IDENTITY" "$APP"
 else
   echo "note: signing ad-hoc; permissions will need re-granting after each build."

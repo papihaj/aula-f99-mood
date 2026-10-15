@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Used with the hardened runtime that notarization needs. Each entry keeps
+     one feature working; nothing else is allowed. -->
+<plist version="1.0">
+<dict>
+	<!-- Music in the room (microphone). -->
+	<key>com.apple.security.device.audio-input</key><true/>
+	<!-- Song progress from Spotify or Music, and Mail's unread count. -->
+	<key>com.apple.security.automation.apple-events</key><true/>
+	<!-- Calendar alerts. -->
+	<key>com.apple.security.personal-information.calendars</key><true/>
+</dict>
+</plist>
