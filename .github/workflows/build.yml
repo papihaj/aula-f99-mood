@@ -15,7 +15,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Test and build
         # Both architectures, like a release, so an Intel-only break shows up too.
         run: ARCHS="arm64 x86_64" ./build.sh

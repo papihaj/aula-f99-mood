@@ -38,9 +38,13 @@ You can install F99 Mood in one of two ways.
 ### Option 2: download the app
 
 1. Download [F99-Mood.dmg](https://github.com/papihaj/aula-f99-mood/releases/latest/download/F99-Mood.dmg).
-2. Open the file you downloaded, and drag F99 Mood into the Applications
+2. Optional: check the download isn't damaged. In Terminal, run
+   `shasum -a 256 ~/Downloads/F99-Mood.dmg` and compare the result with
+   [F99-Mood.dmg.sha256](https://github.com/papihaj/aula-f99-mood/releases/latest/download/F99-Mood.dmg.sha256).
+   They should match.
+3. Open the file you downloaded, and drag F99 Mood into the Applications
    folder.
-3. Double-click F99 Mood in your Applications folder. The first time, your Mac
+4. Double-click F99 Mood in your Applications folder. The first time, your Mac
    says it can't check the app, because the app isn't from the App Store. Click
    Done, open System Settings › Privacy & Security, scroll down and click Open
    Anyway. You only need to do this once.
@@ -98,3 +102,14 @@ and click Fix next to that permission.
 You only need this if you want to change the code. Install Apple's developer
 tools with `xcode-select --install`, then run `./build.sh` in this folder. The
 app is saved in the `build` folder.
+
+## Making a release
+
+1. In [CHANGELOG.md](CHANGELOG.md), rename "Unreleased" to the new version
+   and date, e.g. `## 1.1 (20 October 2026)`.
+2. Tag the commit and push the tag: `git tag v1.1 && git push origin v1.1`.
+
+The Release workflow then builds the app, signs and notarizes it if the
+Developer ID secrets are set (see `.github/workflows/release.yml`), and
+publishes `F99-Mood.dmg` with its checksum. The install command runs
+[Tools/install.sh](Tools/install.sh), which checks both before installing.

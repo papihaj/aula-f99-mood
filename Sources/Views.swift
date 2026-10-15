@@ -707,12 +707,12 @@ struct PaletteChooser: View {
                     if model.settings.customColors.count < 5 {
                         Button { model.setCustomColors(model.settings.customColors + [RGB(1, 1, 1)]) } label: {
                             Image(systemName: "plus.circle")
-                        }.buttonStyle(.borderless).help("Add a colour")
+                        }.buttonStyle(.borderless).help("Add a colour").accessibilityLabel("Add a colour")
                     }
                     if model.settings.customColors.count > 2 {
                         Button { model.setCustomColors(Array(model.settings.customColors.dropLast())) } label: {
                             Image(systemName: "minus.circle")
-                        }.buttonStyle(.borderless).help("Remove the last colour")
+                        }.buttonStyle(.borderless).help("Remove the last colour").accessibilityLabel("Remove the last colour")
                     }
                 }
             }
@@ -799,7 +799,8 @@ struct SymbolPicker: View {
                                 .background(RoundedRectangle(cornerRadius: 7).fill(mood.symbolName == name ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.05)))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(name)
+                        // "flame.fill" reads as "flame".
+                        .accessibilityLabel(name.replacingOccurrences(of: ".fill", with: "").replacingOccurrences(of: ".", with: " "))
                     }
                 }
                 Button("Use the effect's icon") { mood.symbol = nil; open.value = false }

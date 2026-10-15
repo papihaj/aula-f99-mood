@@ -1,0 +1,95 @@
+# Builds a release when a version tag (v1.1, v2.0, ...) is pushed: a universal
+# app in F99-Mood.dmg, plus F99-Mood.dmg.sha256 so downloads can be checked.
+#
+# With these repository secrets the app is signed with a Developer ID and
+# notarized by Apple, so macOS opens it without the "can't check" warning.
+# Without them the release is still built, signed ad hoc.
+#   DEVELOPER_ID_P12           the "Developer ID Application" certificate and
+#                              its private key, exported as .p12, base64
+#   DEVELOPER_ID_P12_PASSWORD  the password chosen when exporting the .p12
+#   NOTARY_APPLE_ID            the Apple ID of the developer account
+#   NOTARY_PASSWORD            an app-specific password for that Apple ID
+#   NOTARY_TEAM_ID             the 10-character team ID
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      HAS_SIGNING: ${{ secrets.DEVELOPER_ID_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set the version from the tag
+        run: |
+          plutil -replace CFBundleShortVersionString -string "${GITHUB_REF_NAME#v}" Info.plist
+          plutil -replace CFBundleVersion -string "${{ github.run_number }}" Info.plist
+
+      - name: Import the Developer ID certificate
+        if: env.HAS_SIGNING == 'true'
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/id.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm "$RUNNER_TEMP/id.p12"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -o '"Developer ID Application[^"]*"' | head -1 | tr -d '"')
+          [[ -n "$IDENTITY" ]] || { echo "No Developer ID Application identity in the .p12"; exit 1; }
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Test and build
+        run: ARCHS="arm64 x86_64" ./build.sh
+
+      - name: Make the disk image
+        run: |
+          mkdir -p build/dmg
+          cp -R "build/F99 Mood.app" build/dmg/
+          ln -s /Applications build/dmg/Applications
+          hdiutil create -volname "F99 Mood" -srcfolder build/dmg -format UDZO -ov build/F99-Mood.dmg
+          if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+            codesign --force --timestamp --sign "$SIGN_IDENTITY" build/F99-Mood.dmg
+          fi
+
+      - name: Notarize
+        if: env.HAS_SIGNING == 'true'
+        env:
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: |
+          xcrun notarytool submit build/F99-Mood.dmg --wait \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$TEAM_ID"
+          xcrun stapler staple build/F99-Mood.dmg
+          spctl --assess --type open --context context:primary-signature -v build/F99-Mood.dmg
+
+      - name: Checksum
+        run: cd build && shasum -a 256 F99-Mood.dmg > F99-Mood.dmg.sha256 && cat F99-Mood.dmg.sha256
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES=$(awk '/^## /{n++} n==2{exit} n==1' CHANGELOG.md | tail -n +2)
+          [[ -n "$NOTES" ]] || NOTES="Download F99-Mood.dmg below, open it, and drag F99 Mood into your Applications folder."
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" build/F99-Mood.dmg build/F99-Mood.dmg.sha256 --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" build/F99-Mood.dmg build/F99-Mood.dmg.sha256 \
+              --title "F99 Mood ${GITHUB_REF_NAME#v}" --notes "$NOTES"
+          fi
