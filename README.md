@@ -73,6 +73,11 @@ permission's name and turn on F99 Mood.
 | Accessibility | To light up keys as you press them, and for shortcuts that type text. |
 | Screen & System Audio Recording | To make the keys move with music playing on your Mac. The sound is never saved. |
 | Microphone | Only if you want the keys to move with music in the room instead. |
+| Calendars | Only for calendar alerts. The app reads your events' start times and titles, to show which one is next. |
+| Automation | Only for the song progress bar (asks Spotify or Music) and new-mail alerts (asks Mail for its unread count). |
+
+F99 Mood doesn't connect to the internet. Your settings stay on your Mac, in
+`~/Library/Application Support/F99 Mood`.
 
 If you turned a permission on but the app still asks, open the app's Settings
 and click Fix next to that permission.
@@ -85,6 +90,8 @@ and click Fix next to that permission.
   Settings. The app puts back the lighting your keyboard had before.
 - **Something else:** please
   [open an issue](https://github.com/papihaj/aula-f99-mood/issues).
+- **A security problem:** please report it privately, as
+  [SECURITY.md](SECURITY.md) explains.
 
 ## Building it from the code
 
