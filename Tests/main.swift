@@ -525,6 +525,23 @@ check(Schedule.due(plan, at: at(2026, 10, 18, 7, 30), calendar: cal) == nil, "we
 check(Schedule.current(plan, at: at(2026, 10, 13, 12, 0), calendar: cal)?.moodID == moodA, "current: morning until night")
 check(Schedule.current(plan, at: at(2026, 10, 13, 23, 0), calendar: cal)?.moodID == moodB, "current: night after 22:00")
 check(Schedule.current(plan, at: at(2026, 10, 13, 6, 0), calendar: cal)?.moodID == moodB, "current: carries over from last night")
+// An entry missed while the Mac slept is still picked up on waking.
+check(Schedule.latest(plan, after: at(2026, 10, 12, 23, 0), through: at(2026, 10, 13, 8, 15), calendar: cal)?.moodID == moodA,
+      "missed overnight: morning entry caught up")
+check(Schedule.latest(plan, after: at(2026, 10, 13, 7, 29), through: at(2026, 10, 13, 7, 30), calendar: cal)?.moodID == moodA,
+      "latest: its own minute")
+check(Schedule.latest(plan, after: at(2026, 10, 13, 7, 30), through: at(2026, 10, 13, 7, 31), calendar: cal) == nil,
+      "latest: not twice")
+check(Schedule.latest(plan, after: at(2026, 10, 13, 6, 0), through: at(2026, 10, 13, 23, 0), calendar: cal)?.moodID == moodB,
+      "latest: the most recent of two")
+check(Schedule.latest(plan, after: at(2026, 10, 13, 8, 0), through: at(2026, 10, 13, 7, 0), calendar: cal) == nil,
+      "latest: clock went back")
+// The spring-forward hour (02:00-03:00 on 2026-03-08 in New York) doesn't swallow a 02:30 entry.
+var ny = Calendar(identifier: .gregorian); ny.timeZone = TimeZone(identifier: "America/New_York")!
+let skipped = ScheduleEntry(hour: 2, minute: 30, moodID: moodA)
+let beforeJump = ny.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 1, minute: 59))!
+check(Schedule.latest([skipped], after: beforeJump, through: beforeJump.addingTimeInterval(3_600), calendar: ny)?.moodID == moodA,
+      "latest: entry in a skipped hour still runs")
 var off = night; off.enabled = false
 check(Schedule.current([off], at: at(2026, 10, 13, 23, 0), calendar: cal) == nil, "switched-off entry ignored")
 check(ScheduleEntry(hour: 9, minute: 0, days: Set(2...6), moodID: nil).daysText == "Weekdays", "days text")

@@ -228,6 +228,29 @@ enum Schedule {
             && $0.hour == c.hour && $0.minute == c.minute }
     }
 
+    /// The entry that most recently started after `start` and no later than
+    /// `end`, if any. Catches an entry whose minute was never checked: the Mac
+    /// was asleep, or a clock change skipped it. Looks back at most a week.
+    static func latest(_ entries: [ScheduleEntry], after start: Date, through end: Date,
+                       calendar: Calendar = .current) -> ScheduleEntry? {
+        let from = max(start, end.addingTimeInterval(-7 * 86_400))
+        guard from < end else { return nil }
+        var best: (at: Date, entry: ScheduleEntry)?
+        var day = calendar.startOfDay(for: from)
+        while day <= end {
+            let weekday = calendar.component(.weekday, from: day)
+            for e in entries where e.enabled && e.moodID != nil && e.days.contains(weekday) {
+                // A time a clock change skipped moves on to the next one that exists.
+                guard let at = calendar.date(bySettingHour: e.hour, minute: e.minute, second: 0, of: day),
+                      at > from, at <= end, at >= (best?.at ?? .distantPast) else { continue }
+                best = (at, e) // a tie goes to the later entry, as in `due`
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        return best?.entry
+    }
+
     /// The entry in charge right now: the latest one that has started today,
     /// else the latest from an earlier day this week.
     static func current(_ entries: [ScheduleEntry], at date: Date, calendar: Calendar = .current) -> ScheduleEntry? {

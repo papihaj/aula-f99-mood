@@ -242,6 +242,7 @@ final class AppModel: ObservableObject {
             }
             DispatchQueue.main.async {
                 self.pending -= 1
+                self.scheduleWaitsForKeyboard = false
                 switch result {
                 case .success(let (kb, page)):
                     self.page = page
@@ -1239,6 +1240,7 @@ final class AppModel: ObservableObject {
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                self.scheduleWaitsForKeyboard = true
                 self.resumeMusicAfterConnect = self.musicOn
                 if self.musicOn { self.stopMusic() }
                 if self.liveMood != nil { self.stopLive() }
@@ -1248,7 +1250,8 @@ final class AppModel: ObservableObject {
         ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             // Give USB a moment to come back, then start afresh.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                guard let self, Keyboard.isPresent else { return }
+                guard let self else { return }
+                guard Keyboard.isPresent else { self.scheduleWaitsForKeyboard = false; return }
                 self.connect()
             }
         }
@@ -1326,14 +1329,24 @@ final class AppModel: ObservableObject {
     // MARK: Schedule, calendar alerts, now playing, typing sounds
 
     private var lastScheduleMinute = -1
+    /// When the schedule was last checked. Entries that started since then
+    /// still switch, so one due while the Mac slept isn't skipped.
+    private var scheduleCheckedAt: Date?
+    /// Set while the Mac sleeps, until the keyboard has had a chance to come
+    /// back, so a missed entry is applied to the keyboard and not to a dead
+    /// connection.
+    private var scheduleWaitsForKeyboard = false
 
-    /// Once a minute: switch to a mood that's scheduled to start now.
+    /// Once a minute: switch to a mood that's scheduled to have started since
+    /// the last check.
     private func checkSchedule() {
         let now = Date()
         let minute = Calendar.current.component(.minute, from: now)
-        guard minute != lastScheduleMinute else { return }
+        guard minute != lastScheduleMinute, !scheduleWaitsForKeyboard else { return }
         lastScheduleMinute = minute
-        guard let entry = Schedule.due(settings.schedule, at: now), let id = entry.moodID,
+        let since = scheduleCheckedAt ?? now.addingTimeInterval(-60)
+        scheduleCheckedAt = now
+        guard let entry = Schedule.latest(settings.schedule, after: since, through: now), let id = entry.moodID,
               let mood = settings.moods.first(where: { $0.id == id }) else { return }
         // Already on, or an app's own mood is in charge: leave it.
         if settings.activeMoodID == id && (mood.live == nil || liveMood?.id == id) { return }
