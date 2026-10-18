@@ -95,20 +95,3 @@ and click Fix next to that permission.
   [open an issue](https://github.com/papihaj/aula-f99-mood/issues).
 - **A security problem:** please report it privately, as
   [SECURITY.md](SECURITY.md) explains.
-
-## Building it from the code
-
-You only need this if you want to change the code. Install Apple's developer
-tools with `xcode-select --install`, then run `./build.sh` in this folder. The
-app is saved in the `build` folder.
-
-## Making a release
-
-1. In [CHANGELOG.md](CHANGELOG.md), put the date in the top heading in place
-   of "not released yet", e.g. `## 1.0 (20 October 2026)`.
-2. Tag the commit and push the tag: `git tag v1.0 && git push origin v1.0`.
-
-The Release workflow then builds the app, signs and notarizes it if the
-Developer ID secrets are set (see `.github/workflows/release.yml`), and
-publishes `F99-Mood.dmg` with its checksum. The install command runs
-[Tools/install.sh](Tools/install.sh), which checks both before installing.
