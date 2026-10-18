@@ -2,7 +2,6 @@ import AppKit
 import AVFoundation
 import IOKit.hid
 import ServiceManagement
-import EventKit
 import SwiftUI
 
 // Managing moods: new, remix, revert, delete, import and export.

@@ -4,6 +4,8 @@ What's new in each version of F99 Mood.
 
 ## Unreleased
 
+- Removed: calendar alerts. The app no longer reads your calendars or asks
+  for the Calendars permission.
 - New: a home side panel, white and dark themes, a 3D keyboard picture, and
   thocky and creamy typing sounds.
 - Fixed: a scheduled mood now switches on even if your Mac was asleep at that

@@ -1,5 +1,4 @@
 import SwiftUI
-import EventKit
 import UniformTypeIdentifiers
 
 // MARK: Painting
@@ -207,37 +206,13 @@ struct ScheduleRow: View {
 
 // MARK: Alerts and now playing
 
-/// Calendar, Mail and now-playing on the keys; a section of the Settings pane.
+/// Mail and now-playing on the keys; a section of the Settings pane.
 /// An alert also blinks the light strip until it's over or cleared.
 struct AlertsSection: View {
     @EnvironmentObject var model: AppModel
-    @StateObject private var denied = ViewState(CalendarWatcher.status == .denied || CalendarWatcher.status == .restricted)
 
     var body: some View {
             Section {
-                Toggle("Flash the keyboard before calendar events", isOn: Binding(
-                    get: { model.settings.calendarAlerts },
-                    set: { on in
-                        guard on else { model.settings.calendarAlerts = false; return }
-                        if CalendarWatcher.allowed { model.settings.calendarAlerts = true; return }
-                        model.requestCalendarAccess { ok in
-                            model.settings.calendarAlerts = ok
-                            denied.value = !ok
-                        }
-                    }))
-                if denied.value {
-                    HStack {
-                        Image(systemName: "calendar.badge.exclamationmark").foregroundStyle(.orange)
-                        Text("Calendar alerts need access to your calendars.").font(.callout)
-                        Spacer()
-                        Button("Turn on…") { model.turnOnCalendars() }
-                    }
-                }
-                Picker("When", selection: $model.settings.alertMinutesBefore) {
-                    Text("As it starts").tag(0)
-                    ForEach([1, 2, 5, 10, 15], id: \.self) { Text("\($0) minute\($0 == 1 ? "" : "s") before").tag($0) }
-                }
-                .disabled(!model.settings.calendarAlerts)
                 Toggle("Flash for new mail, Messages and Slack", isOn: $model.settings.mailAlerts)
                 if model.settings.mailAlerts && model.mailNotAllowed {
                     HStack {

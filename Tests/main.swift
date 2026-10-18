@@ -548,7 +548,7 @@ check(ScheduleEntry(hour: 9, minute: 0, days: Set(2...6), moodID: nil).daysText 
 
 // New settings: an old file gets the defaults, and they fullTurn-trip.
 let plain = try! JSONDecoder().decode(AppSettings.self, from: #"{"moods":[]}"#.data(using: .utf8)!)
-check(plain.schedule.isEmpty && !plain.calendarAlerts && !plain.nowPlayingBar && !plain.keySounds, "extras off by default")
+check(plain.schedule.isEmpty && !plain.nowPlayingBar && !plain.keySounds, "extras off by default")
 var extras = AppSettings.defaults
 extras.schedule = plan; extras.keySounds = true; extras.keySound = .clicky; extras.alertFlashes = 4
 let extrasBack = try! JSONDecoder().decode(AppSettings.self, from: Storage.encode(extras))

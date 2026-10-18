@@ -2,7 +2,6 @@ import AppKit
 import AVFoundation
 import IOKit.hid
 import ServiceManagement
-import EventKit
 import SwiftUI
 
 // Saving settings, and app-wide options.
@@ -51,7 +50,7 @@ extension AppModel {
         if old.nowPlayingBar != settings.nowPlayingBar || old.nowPlayingColor != settings.nowPlayingColor
             || old.keySounds != settings.keySounds || old.keySound != settings.keySound
             || old.keySoundFile != settings.keySoundFile || old.keySoundVolume != settings.keySoundVolume
-            || old.calendarAlerts != settings.calendarAlerts || old.mailAlerts != settings.mailAlerts {
+            || old.mailAlerts != settings.mailAlerts {
             updateExtras()
         }
         if old.appearance != settings.appearance { applyAppearance() }

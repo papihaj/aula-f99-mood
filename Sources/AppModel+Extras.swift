@@ -2,13 +2,12 @@ import AppKit
 import AVFoundation
 import IOKit.hid
 import ServiceManagement
-import EventKit
 import SwiftUI
 
-// Extras: the schedule, calendar and mail alerts, now playing and typing sounds.
+// Extras: the schedule, mail alerts, now playing and typing sounds.
 @MainActor
 extension AppModel {
-    // MARK: Schedule, calendar alerts, now playing, typing sounds
+    // MARK: Schedule, now playing, typing sounds
 
     /// Once a minute: switch to a mood that's scheduled to have started since
     /// the last check.
@@ -25,31 +24,6 @@ extension AppModel {
         if settings.activeMoodID == id && (mood.live == nil || liveMood?.id == id) { return }
         if appMoodID != nil { moodBeforeApp = .some(id); return }
         apply(mood)
-    }
-
-    func checkCalendar() {
-        guard settings.calendarAlerts, !darkened else { return }
-        let events = calendar.due(minutesBefore: settings.alertMinutesBefore)
-        guard let first = events.min(by: { $0.startDate < $1.startDate }) else { return }
-        let time = first.startDate.formatted(date: .omitted, time: .shortened)
-        // The strip stays lit until the event starts (or for 2 minutes).
-        let until = max(first.startDate, Date().addingTimeInterval(120))
-        raiseAlert("\(first.title ?? "Event") at \(time)", until: until, mail: false)
-    }
-
-    /// Ask for calendar access; calls back with whether it was allowed.
-    func requestCalendarAccess(_ done: @escaping (Bool) -> Void) {
-        calendar.requestAccess { ok in
-            DispatchQueue.main.async {
-                self.objectWillChange.send()
-                done(ok)
-            }
-        }
-    }
-
-    /// Put F99 Mood in the Calendars list and open it there.
-    func turnOnCalendars() {
-        PrivacyPane.turnOn(service: "Calendar", pane: "Privacy_Calendars") { requestCalendarAccess { _ in } }
     }
 
     /// Flash the whole keyboard a few times. On top of a live effect or the
