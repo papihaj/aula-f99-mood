@@ -104,9 +104,9 @@ app is saved in the `build` folder.
 
 ## Making a release
 
-1. In [CHANGELOG.md](CHANGELOG.md), rename "Unreleased" to the new version
-   and date, e.g. `## 1.1 (20 October 2026)`.
-2. Tag the commit and push the tag: `git tag v1.1 && git push origin v1.1`.
+1. In [CHANGELOG.md](CHANGELOG.md), put the date in the top heading in place
+   of "not released yet", e.g. `## 1.0 (20 October 2026)`.
+2. Tag the commit and push the tag: `git tag v1.0 && git push origin v1.0`.
 
 The Release workflow then builds the app, signs and notarizes it if the
 Developer ID secrets are set (see `.github/workflows/release.yml`), and
