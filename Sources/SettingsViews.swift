@@ -232,9 +232,6 @@ struct PermissionsSection: View {
     var body: some View {
         Section {
             ForEach(Permission.allCases) { PermissionRow(permission: $0) }
-            if model.settings.calendarAlerts || CalendarWatcher.status != .notDetermined {
-                calendarRow
-            }
         } header: {
             Text("Permissions")
         } footer: {
@@ -245,22 +242,6 @@ struct PermissionsSection: View {
         .onReceive(timer) { _ in tick.value += 1 }
     }
 
-    private var calendarRow: some View {
-        let ok = CalendarWatcher.allowed
-        return HStack(spacing: 10) {
-            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundStyle(ok ? .green : .orange)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Calendars")
-                Text(ok ? "Allowed · Calendar alerts" : "Not allowed · Calendar alerts").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if !ok {
-                Button("Turn on…") { model.turnOnCalendars() }
-                    .help("Opens System Settings on the right list, with F99 Mood already in it")
-            }
-        }
-    }
 }
 
 /// Shown while a live effect wants key presses but macOS hasn't allowed it.

@@ -8,8 +8,8 @@ the keys, the lighting and other settings of your F99 from a Mac.
   campfire, and switch between them with a click or a shortcut.
 - **Music:** make the keys move with the music playing on your Mac.
 - **Macros:** set up shortcuts that type text for you or open an app.
-- **Extras:** switch moods on a schedule, flash the keys for calendar events
-  and new mail, and add typing sounds.
+- **Extras:** switch moods on a schedule, flash the keys for new mail, and add
+  typing sounds.
 
 Website: [joharapurkar.com/f99](https://joharapurkar.com/f99)
 
@@ -77,7 +77,6 @@ permission's name and turn on F99 Mood.
 | Accessibility | To light up keys as you press them, and for shortcuts that type text. |
 | Screen & System Audio Recording | To make the keys move with music playing on your Mac. The sound is never saved. |
 | Microphone | Only if you want the keys to move with music in the room instead. |
-| Calendars | Only for calendar alerts. The app reads your events' start times and titles, to show which one is next. |
 | Automation | Only for the song progress bar (asks Spotify or Music) and new-mail alerts (asks Mail for its unread count). |
 
 F99 Mood doesn't connect to the internet. Your settings stay on your Mac, in

@@ -1,6 +1,5 @@
 import AppKit
 import AVFoundation
-import EventKit
 
 // MARK: Now playing
 
@@ -177,47 +176,6 @@ final class BadgeWatcher {
             if let last = lastCounts[bundleID], count > last { onNewMessages?(name, count - last) }
             lastCounts[bundleID] = count
         }
-    }
-}
-
-// MARK: Calendar
-
-/// Finds calendar events that are about to start. Reads only start times,
-/// on this Mac; nothing is stored or sent.
-final class CalendarWatcher {
-    private let store = EKEventStore()
-    private var alerted = Set<String>()
-
-    static var status: EKAuthorizationStatus { EKEventStore.authorizationStatus(for: .event) }
-    static var allowed: Bool {
-        if #available(macOS 14, *) { return status == .fullAccess }
-        return status == .authorized
-    }
-
-    func requestAccess(_ done: @escaping @Sendable (Bool) -> Void) {
-        if #available(macOS 14, *) {
-            store.requestFullAccessToEvents { ok, _ in DispatchQueue.main.async { done(ok) } }
-        } else {
-            store.requestAccess(to: .event) { ok, _ in DispatchQueue.main.async { done(ok) } }
-        }
-    }
-
-    /// Events that start within `minutesBefore` minutes (or started in the
-    /// last minute) and haven't been alerted yet. Each is returned once.
-    func due(minutesBefore: Int, now: Date = Date()) -> [EKEvent] {
-        guard Self.allowed else { return [] }
-        let lead = Double(minutesBefore) * 60
-        let predicate = store.predicateForEvents(withStart: now.addingTimeInterval(-60),
-                                                 end: now.addingTimeInterval(lead + 1), calendars: nil)
-        var fresh: [EKEvent] = []
-        for event in store.events(matching: predicate) where !event.isAllDay {
-            guard let start = event.startDate, start >= now.addingTimeInterval(-60), start <= now.addingTimeInterval(lead + 1)
-            else { continue }
-            let key = "\(event.eventIdentifier ?? event.title ?? "")@\(start.timeIntervalSince1970)"
-            if alerted.insert(key).inserted { fresh.append(event) }
-        }
-        if alerted.count > 500 { alerted.removeAll() }
-        return fresh
     }
 }
 

@@ -2,7 +2,6 @@ import AppKit
 import AVFoundation
 import IOKit.hid
 import ServiceManagement
-import EventKit
 import SwiftUI
 
 // Reacting to the Mac: lock, sleep, idle and app switching.

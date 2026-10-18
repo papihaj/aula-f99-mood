@@ -344,7 +344,7 @@ final class LiveRenderer {
 }
 
 /// Drawn on top of whatever is streaming: a song's progress up the column of
-/// keys beside the light strip, and calendar alert flashes.
+/// keys beside the light strip, and alert flashes.
 struct Overlays {
     /// 0...1, or nil for no bar.
     var progress: Double?

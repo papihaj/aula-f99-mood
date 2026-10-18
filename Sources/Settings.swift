@@ -351,9 +351,6 @@ struct AppSettings: Codable {
     var welcomeDone = false
     /// Moods that switch on at set times.
     var schedule: [ScheduleEntry] = []
-    /// Flash the keyboard before calendar events.
-    var calendarAlerts = false
-    var alertMinutesBefore = 5
     var alertColor = RGB(hex: 0xffb300)
     var alertFlashes = 3
     /// Flash for new messages in Mail, and blink the strip for new
@@ -420,8 +417,6 @@ struct AppSettings: Codable {
         // who has already set the app up.
         welcomeDone = opt(.welcomeDone) ?? true
         schedule = (try? c.decodeLenientArray(ScheduleEntry.self, forKey: .schedule)) ?? []
-        calendarAlerts = opt(.calendarAlerts) ?? false
-        alertMinutesBefore = min(max(opt(.alertMinutesBefore) ?? 5, 0), 60)
         alertColor = opt(.alertColor) ?? RGB(hex: 0xffb300)
         alertFlashes = min(max(opt(.alertFlashes) ?? 3, 1), 6)
         mailAlerts = opt(.mailAlerts) ?? false

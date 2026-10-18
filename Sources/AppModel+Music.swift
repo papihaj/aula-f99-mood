@@ -2,7 +2,6 @@ import AppKit
 import AVFoundation
 import IOKit.hid
 import ServiceManagement
-import EventKit
 import SwiftUI
 
 // Music mode: listening to audio and streaming frames to the keys.

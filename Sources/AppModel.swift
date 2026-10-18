@@ -2,7 +2,6 @@ import AppKit
 import AVFoundation
 import IOKit.hid
 import ServiceManagement
-import EventKit
 import SwiftUI
 
 @MainActor
@@ -90,7 +89,6 @@ final class AppModel: ObservableObject {
     /// Drawn on top of streamed frames. Only touched on `queue`.
     nonisolated(unsafe) var overlays = Overlays()
     let nowPlaying = NowPlayingWatcher()
-    let calendar = CalendarWatcher()
     let keySounds = KeySoundPlayer()
     let mail = MailWatcher()
     let badges = BadgeWatcher()
@@ -199,7 +197,6 @@ final class AppModel: ObservableObject {
         if musicOn, silentNow, ticks % 2 == 0 { updateHearingNothing() }
         checkIdle()
         checkSchedule()
-        if ticks % 20 == 0 { checkCalendar() }
         if let until = stripAlertUntil, Date() >= until { clearAlert() }
         if ticks % 30 == 0, mailNotAllowed != mail.notAllowed { mailNotAllowed = mail.notAllowed }
         if needsAccessibility, AXIsProcessTrusted() {
