@@ -38,13 +38,9 @@ You can install F99 Mood in one of two ways.
 ### Option 2: download the app
 
 1. Download [F99-Mood.dmg](https://github.com/papihaj/aula-f99-mood/releases/latest/download/F99-Mood.dmg).
-2. Optional: check the download isn't damaged. In Terminal, run
-   `shasum -a 256 ~/Downloads/F99-Mood.dmg` and compare the result with
-   [F99-Mood.dmg.sha256](https://github.com/papihaj/aula-f99-mood/releases/latest/download/F99-Mood.dmg.sha256).
-   They should match.
-3. Open the file you downloaded, and drag F99 Mood into the Applications
+2. Open the file you downloaded, and drag F99 Mood into the Applications
    folder.
-4. Double-click F99 Mood in your Applications folder. The first time, your Mac
+3. Double-click F99 Mood in your Applications folder. The first time, your Mac
    says it can't check the app, because the app isn't from the App Store. Click
    Done, open System Settings › Privacy & Security, scroll down and click Open
    Anyway. You only need to do this once.
@@ -93,5 +89,9 @@ and click Fix next to that permission.
   Settings. The app puts back the lighting your keyboard had before.
 - **Something else:** please
   [open an issue](https://github.com/papihaj/aula-f99-mood/issues).
-- **A security problem:** please report it privately, as
-  [SECURITY.md](SECURITY.md) explains.
+- **A security problem:** please
+  [report it privately](https://github.com/papihaj/aula-f99-mood/security/advisories/new)
+  instead of opening an issue.
+
+Have an idea for F99 Mood? [Open an issue](https://github.com/papihaj/aula-f99-mood/issues)
+and tell me about it.
