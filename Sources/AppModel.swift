@@ -297,6 +297,7 @@ final class AppModel: ObservableObject {
     var isOff: Bool { settings.activeMoodID == Self.offMood.id }
 
     func apply(_ mood: Mood) {
+        if settings.moods.contains(where: { $0.id == mood.id }) { settings.moodUses[mood.id.uuidString, default: 0] += 1 }
         if mood.live != nil {
             startLive(mood)
             return

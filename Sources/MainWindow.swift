@@ -506,10 +506,13 @@ enum LightingSimulator {
             hue = x - ts * 0.3
         case 12: // Reaction: dark until you type; only pressed keys light
             v = 0.04
-        case 13: // Sine wave: every key lit, brighter along a rolling wave
-            let wave = 0.5 + 0.4 * sin(x * 9 - ts * 3)
-            v = 0.6 + 0.4 * max(0, 1 - abs((1 - y) - wave) * 3)
-            hue = x * 0.8 - ts * 0.15
+        case 13: // Sine wave: narrow bands moving out sideways from the middle,
+            // a V on the top rows and an upside-down V on the bottom ones,
+            // crossing in about a second (watched on the user's keyboard).
+            // Colourful lights every key.
+            let phase = (abs(dx) - abs(dy)) * 0.6 - ts * 1.25
+            hue = phase
+            if !rainbow { v = 0.35 + 0.65 * (0.5 + 0.5 * sin(phase * 2 * .pi)) }
         case 14: // Retinue scanning: a bar sweeping back and forth
             let bar = 0.5 + 0.5 * sin(ts * 1.5)
             v = 0.05 + 0.95 * max(0, 1 - abs(x - bar) * 7)

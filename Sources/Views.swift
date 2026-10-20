@@ -17,7 +17,8 @@ struct MenuView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
 
-    /// A plain menu, like Keystro's: the window, music, off, and the moods.
+    /// A plain menu, like Keystro's: the window, music, off, and your three
+    /// most-used moods.
     var body: some View {
         Button("Open F99 Mood") {
             openWindow(id: "main")
@@ -29,10 +30,7 @@ struct MenuView: View {
         Toggle("Lights Off", isOn: Binding(get: { model.isOff }, set: { if $0 { model.turnOff() } }))
             .disabled(model.isOff)
         Divider()
-        let shown = model.settings.moods.filter { !$0.hidden }
-        ForEach(shown.filter { $0.live == nil }) { moodItem($0) }
-        Divider()
-        ForEach(shown.filter { $0.live != nil }) { moodItem($0) }
+        ForEach(model.settings.mostUsedMoods(3)) { moodItem($0) }
         Divider()
         Button("Quit F99 Mood") { NSApp.terminate(nil) }
             .keyboardShortcut("q")

@@ -334,6 +334,9 @@ struct AppSettings: Codable {
     /// The keyboard effect left on the keyboard when F99 Mood quits, since
     /// live moods need the app. nil puts back what it showed before.
     var awayMoodID: UUID?
+    /// How often each mood was switched on (by id), for the menu bar's
+    /// most-used moods.
+    var moodUses: [String: Int] = [:]
     var pressGlow: PressGlow = .typingEffects
     var pressColor: PressColor = .lightest
     var pressCustomColor = RGB(hex: 0xffffff)
@@ -407,6 +410,7 @@ struct AppSettings: Codable {
         startupMoodID = try c.decodeIfPresent(UUID.self, forKey: .startupMoodID)
         func opt<T: Decodable>(_ k: CodingKeys) -> T? { (try? c.decodeIfPresent(T.self, forKey: k)) ?? nil }
         awayMoodID = opt(.awayMoodID)
+        moodUses = opt(.moodUses) ?? [:]
         keysLitLevel = min(max(opt(.keysLitLevel) ?? 0.5, 0.2), 0.8)
         pressGlow = opt(.pressGlow) ?? .typingEffects
         pressColor = opt(.pressColor) ?? .lightest
@@ -563,6 +567,14 @@ struct AppSettings: Codable {
     /// Bring moods saved by an older version up to date: drop the old
     /// built-in moods you haven't changed, keep everything you made or
     /// edited, and add the new built-in moods you don't have yet.
+    /// The moods used most, most first; ties keep the order on Home.
+    func mostUsedMoods(_ n: Int) -> [Mood] {
+        let shown = moods.filter { !$0.hidden }
+        return shown.enumerated()
+            .sorted { (moodUses[$0.element.id.uuidString] ?? 0, -$0.offset) > (moodUses[$1.element.id.uuidString] ?? 0, -$1.offset) }
+            .prefix(n).map(\.element)
+    }
+
     mutating func upgradeMoods() {
         guard moodsVersion < Self.moodsVersion else { return }
         moods.removeAll { m in
@@ -658,6 +670,7 @@ struct AppSettings: Codable {
         if activeMoodID == id { activeMoodID = nil }
         if startupMoodID == id { startupMoodID = nil }
         if awayMoodID == id { awayMoodID = nil }
+        moodUses[id.uuidString] = nil
         for i in schedule.indices where schedule[i].moodID == id { schedule[i].moodID = nil }
         for i in macros.indices where macros[i].moodID == id { macros[i].moodID = nil }
     }

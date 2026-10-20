@@ -484,6 +484,14 @@ del.activeMoodID = gone; del.startupMoodID = gone; del.awayMoodID = gone
 del.macros = [Macro(name: "m", hotkey: nil, action: .typeText, value: "hi", moodID: gone)]
 del.deleteMood(gone)
 check(del.activeMoodID == nil && del.startupMoodID == nil && del.awayMoodID == nil && del.macros[0].moodID == nil, "delete clears references")
+
+// The menu bar's most-used moods: most uses first, ties in Home's order.
+var used = AppSettings.defaults
+let usedIDs = used.moods.map(\.id)
+used.moodUses = [usedIDs[3].uuidString: 5, usedIDs[1].uuidString: 2]
+check(used.mostUsedMoods(3).map(\.id) == [usedIDs[3], usedIDs[1], usedIDs[0]], "most-used moods first")
+used.deleteMood(usedIDs[3])
+check(used.moodUses[usedIDs[3].uuidString] == nil, "deleting a mood drops its count")
 check(del.addMissingBuiltInMoods() == 1 && del.moods.contains { $0.name == AppSettings.defaults.moods[1].name }, "restore built-in moods")
 
 // Shortcuts: duplicates are found, and a new one is free.
