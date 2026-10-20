@@ -58,12 +58,10 @@ struct F99MoodApp: App {
 
         MenuBarExtra {
             MenuView().environmentObject(model)
-                .tint(Theme.lavender)
-                .buttonStyle(MacButtonStyle())
         } label: {
             Image(systemName: "keyboard")
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
     }
 }
 

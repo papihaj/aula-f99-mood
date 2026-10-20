@@ -17,45 +17,30 @@ struct MenuView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
 
+    /// A plain menu, like Keystro's: the window, music, off, and the moods.
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                StatusPill()
-                Spacer()
-                Button { model.turnOff() } label: { Label("Off", systemImage: "power") }
-                    .controlSize(.small)
-                    .disabled(model.isOff)
-            }
-
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                    ForEach(model.settings.moods.filter { !$0.hidden }) { mood in
-                        MoodButton(mood: mood, compact: true)
-                    }
-                }
-            }
-            .frame(maxHeight: 300)
-
-            MusicControls(compact: true)
-
-            if model.needsAccessibility { AccessibilityBanner(compact: true) }
-            if let error = model.lastError {
-                Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            }
-
-            Divider()
-            HStack {
-                Button("Open F99 Mood") {
-                    openWindow(id: "main")
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-                Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
-            }
-            .buttonStyle(.borderless)
+        Button("Open F99 Mood") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
         }
-        .padding(14)
-        .frame(width: 330)
+        if !model.canWrite { Text("Keyboard not connected") }
+        Divider()
+        Toggle("Dance to Music", isOn: Binding(get: { model.musicOn }, set: { _ in model.toggleMusic() }))
+        Toggle("Lights Off", isOn: Binding(get: { model.isOff }, set: { if $0 { model.turnOff() } }))
+            .disabled(model.isOff)
+        Divider()
+        let shown = model.settings.moods.filter { !$0.hidden }
+        ForEach(shown.filter { $0.live == nil }) { moodItem($0) }
+        Divider()
+        ForEach(shown.filter { $0.live != nil }) { moodItem($0) }
+        Divider()
+        Button("Quit F99 Mood") { NSApp.terminate(nil) }
+            .keyboardShortcut("q")
+    }
+
+    private func moodItem(_ mood: Mood) -> some View {
+        Toggle(mood.name, isOn: Binding(get: { model.settings.activeMoodID == mood.id && !model.musicOn },
+                                        set: { _ in model.apply(mood) }))
     }
 }
 
@@ -107,7 +92,6 @@ struct StatusLine: View {
 struct MoodButton: View {
     @EnvironmentObject var model: AppModel
     let mood: Mood
-    var compact = false
     @StateObject private var confirmDelete = ViewState(false)
     @Environment(\.colorScheme) private var scheme
 
@@ -124,7 +108,7 @@ struct MoodButton: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .top) {
                         Image(systemName: mood.symbolName)
-                            .font(.system(size: compact ? 13 : 15, weight: .semibold))
+                            .font(.system(size: 15, weight: .semibold))
                         Spacer(minLength: 4)
                         if mood.live != nil {
                             Text("LIVE").font(.system(size: 8, weight: .heavy)).tracking(0.5)
@@ -134,22 +118,23 @@ struct MoodButton: View {
                         if active {
                             Image(systemName: "checkmark.circle.fill").font(.system(size: 14))
                                 .symbolRenderingMode(.palette).foregroundStyle(.white, Theme.lavender)
-                        } else if let key = mood.hotkey, !compact {
+                        } else if let key = mood.hotkey {
                             KeycapBadge(hotkey: key)
                         }
                     }
                     Spacer(minLength: 2)
                     HStack(spacing: 4) {
-                        Text(mood.name).font(.system(size: compact ? 11.5 : 12.5, weight: .semibold)).lineLimit(1)
+                        Text(mood.name).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                            .minimumScaleFactor(0.75) // long names shrink a little before cutting off
                         if startup { Image(systemName: "power").font(.system(size: 9, weight: .bold)).help("Start-up mood") }
                         Spacer(minLength: 0)
                     }
                 }
                 .foregroundStyle(Theme.ink)
-                .padding(compact ? 7 : 9)
+                .padding(9)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: compact ? 52 : 68)
+            .frame(height: 68)
             .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(active ? Theme.lavender : Color.primary.opacity(0.08), lineWidth: active ? 2.5 : 0.5))
@@ -163,10 +148,8 @@ struct MoodButton: View {
         .contextMenu {
             Button("Edit…") { model.editMoodRequest = mood.id }
             Button("Duplicate") { model.duplicateMood(mood.id) }
-            if !compact {
-                Button("Move Left") { model.moveMood(mood.id, by: -1) }
-                Button("Move Right") { model.moveMood(mood.id, by: 1) }
-            }
+            Button("Move Left") { model.moveMood(mood.id, by: -1) }
+            Button("Move Right") { model.moveMood(mood.id, by: 1) }
             if model.canRevert(mood) {
                 Button("Revert to original") { model.revert(mood.id) }
             }
@@ -635,7 +618,6 @@ struct MacroEditor: View {
 /// tempo, the style and the colours.
 struct MusicControls: View {
     @EnvironmentObject var model: AppModel
-    var compact = false
     /// Style and colours too; only in the Music pane.
     var full = false
 
@@ -644,9 +626,9 @@ struct MusicControls: View {
             HStack(spacing: 12) {
                 Button { model.toggleMusic() } label: {
                     Image(systemName: model.musicOn ? "stop.fill" : "play.fill")
-                        .font(.system(size: compact ? 13 : 16, weight: .bold))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: compact ? 30 : 38, height: compact ? 30 : 38)
+                        .frame(width: 38, height: 38)
                         .background(Circle().fill(LinearGradient(colors: model.settings.musicPalette.colors.prefix(3).map(\.color),
                                                                  startPoint: .topLeading, endPoint: .bottomTrailing)))
                         .overlay(Circle().strokeBorder(.black.opacity(0.1)))
@@ -665,7 +647,7 @@ struct MusicControls: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if let key = model.settings.musicHotkey, !compact { KeycapBadge(hotkey: key) }
+                if let key = model.settings.musicHotkey { KeycapBadge(hotkey: key) }
             }
 
             if full {

@@ -13,7 +13,7 @@ struct SettingsTab: View {
 
     var body: some View {
         Form {
-            if model.needsAccessibility { AccessibilityBanner(compact: false) }
+            if model.needsAccessibility { AccessibilityBanner() }
             MacrosSection()
             Section("Lights") {
                 Toggle("Keep every key lit", isOn: Binding(get: { model.settings.keepKeysLit },
@@ -258,17 +258,16 @@ struct PermissionsSection: View {
 
 /// Shown while a live effect wants key presses but macOS hasn't allowed it.
 struct AccessibilityBanner: View {
-    let compact: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "hand.raised").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Typing effects need Accessibility. Turn it on for F99 Mood.")
-                    .font(compact ? .caption : .callout)
+                    .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Turn on…") { Permission.accessibility.turnOn() }
-                .controlSize(compact ? .small : .regular)
+                .controlSize(.regular)
             }
         }
         .padding(8)

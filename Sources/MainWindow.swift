@@ -116,7 +116,7 @@ struct MainView: View {
             .layoutPriority(1)
 
             if case .unavailable = model.status { WirelessNote() }
-            if model.needsAccessibility { AccessibilityBanner(compact: false) }
+            if model.needsAccessibility { AccessibilityBanner() }
             if let error = model.lastError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
