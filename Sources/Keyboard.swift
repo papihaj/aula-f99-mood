@@ -281,15 +281,20 @@ final class Keyboard {
         try write { page in page.copyLighting(from: saved) }
     }
 
-    /// Switch to per-key mode so colours streamed from the Mac show up.
-    /// Returns the page from before, for `restoreLighting(from:)` afterwards.
-    func enterStreamMode(strip: ConfigPage.Strip? = nil) throws -> ConfigPage {
-        let before = try readSettings()
+    /// Get ready for colours streamed from the Mac. The F99 shows streamed
+    /// frames over any effect at full brightness (tested on the keyboard), so
+    /// per-key mode isn't saved on it: unplugged, it shows its own effect.
+    /// `base` is saved as that effect; `saved` is the lighting to go back to
+    /// if an older version left the keyboard in per-key mode.
+    func prepareStream(base: ConfigPage.Lighting?, saved: ConfigPage?, strip: ConfigPage.Strip? = nil) throws {
         _ = try write { page in
-            page.setStreamMode()
+            if page.isStreamMode {
+                if let saved, !saved.isStreamMode { page.copyLighting(from: saved) }
+                else { try page.apply(.init(effect: 1, brightness: 3, speed: 0, color: 6)) }
+            }
+            if let base { try page.apply(base) }
             if let strip { try page.setStrip(strip) }
         }
-        return before
     }
 
     /// Change one of the strip's settings bytes (read, patch, write, check).

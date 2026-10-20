@@ -82,8 +82,6 @@ final class AppModel: ObservableObject {
     nonisolated(unsafe) var colorCorrection = true
     nonisolated(unsafe) let renderer = MusicRenderer()
     nonisolated(unsafe) var pageBeforeMusic: ConfigPage?
-    nonisolated(unsafe) var lastFrame: [UInt8] = []
-    nonisolated(unsafe) var lastSent = Date.distantPast
     nonisolated(unsafe) var streamFailures = 0
     var frameTimer: DispatchSourceTimer?
     /// Drawn on top of streamed frames. Only touched on `queue`.
@@ -376,6 +374,14 @@ final class AppModel: ObservableObject {
     }
 
     func setStartupMood(_ id: UUID?) { settings.startupMoodID = id }
+
+    /// The lighting for while F99 Mood isn't running, if a keyboard-effect
+    /// mood is picked for it. Live moods can't run without the app.
+    var awayLighting: ConfigPage.Lighting? {
+        guard let id = settings.awayMoodID,
+              let mood = settings.moods.first(where: { $0.id == id }), mood.live == nil else { return nil }
+        return mood.lighting
+    }
 
     func setKeepKeysLit(_ on: Bool) {
         settings.keepKeysLit = on

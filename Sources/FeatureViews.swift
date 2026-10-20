@@ -40,7 +40,7 @@ struct PaintEditor: View {
                             Circle().fill(c.color).frame(width: 16, height: 16)
                                 .overlay(Circle().strokeBorder(.black.opacity(0.15), lineWidth: 0.5))
                                 .padding(2)
-                                .overlay(Circle().strokeBorder(!erasing.value && brush.value == c ? Color.accentColor : .clear, lineWidth: 1.5))
+                                .overlay(Circle().strokeBorder(!erasing.value && brush.value == c ? Theme.lavender : .clear, lineWidth: 1.5))
                         }
                         .buttonStyle(.plain)
                     }
@@ -173,6 +173,7 @@ struct ScheduleRow: View {
                     ForEach(model.settings.moods) { Text($0.name).tag(UUID?.some($0.id)) }
                 }
                 .labelsHidden()
+                .macMenu()
                 .frame(maxWidth: 220)
                 Spacer()
                 Toggle("On", isOn: $entry.enabled).labelsHidden().toggleStyle(.switch).controlSize(.small)
@@ -189,7 +190,7 @@ struct ScheduleRow: View {
                     } label: {
                         Text(symbols[day - 1]).font(.caption.weight(.semibold))
                             .frame(width: 24, height: 24)
-                            .background(Circle().fill(on ? Color.accentColor : Color.primary.opacity(0.07)))
+                            .background(Circle().fill(on ? Theme.lavender : Color.primary.opacity(0.07)))
                             .foregroundStyle(on ? Color.white : Color.secondary)
                     }
                     .buttonStyle(.plain)

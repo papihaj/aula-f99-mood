@@ -99,20 +99,20 @@ extension AppModel {
         streamSession += 1
         let session = streamSession
         let dim = currentDimLevel
+        let away = awayLighting
         pending += 1
         queue.async { [weak self] in
             guard let self else { return }
             let result = Result { () -> ConfigPage? in
                 guard toKeyboard else { return nil }
                 guard let kb = self.keyboard else { throw KeyboardError.notFound }
-                return try self.beginStream(kb, strip: strip)
+                return try self.beginStream(kb, strip: strip, away: away)
             }
             if case .success(let before) = result {
                 self.pageBeforeMusic = before
                 self.dimLevel = dim; self.dimTarget = dim
                 configure(self.liveRenderer)
                 self.colorCorrection = correction
-                self.lastFrame = []
                 self.streamFailures = 0
             }
             DispatchQueue.main.async {

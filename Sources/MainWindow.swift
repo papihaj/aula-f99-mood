@@ -6,6 +6,11 @@ struct MainView: View {
     @EnvironmentObject var model: AppModel
     /// Remembered for this Mac only; the picture is the same either way.
     @AppStorage("keyboardIn3D") private var in3D = false
+    /// How tall the picture may be, set by dragging the card's bottom edge;
+    /// 0 means as big as the window allows.
+    @AppStorage("keyboardHeight") private var pictureHeight = 0.0
+    @StateObject private var shownHeight = ViewState<CGFloat>(0)
+    @StateObject private var dragStart = ViewState<CGFloat?>(nil)
     var body: some View {
         HStack(spacing: 0) {
             page
@@ -16,7 +21,8 @@ struct MainView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: model.inspecting)
-        .background(Theme.page)
+        // Down into the window's rounded bottom edge too, or a white strip shows there.
+        .background(Theme.page.ignoresSafeArea())
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 NewMoodMenu()
@@ -25,7 +31,7 @@ struct MainView: View {
         }
         .sheet(isPresented: Binding(get: { !model.settings.welcomeDone },
                                     set: { if !$0 { model.settings.welcomeDone = true } })) {
-            WelcomeView().environmentObject(model)
+            WelcomeView().environmentObject(model).buttonStyle(MacButtonStyle())
         }
     }
 
@@ -76,6 +82,12 @@ struct MainView: View {
                     }
                 }
                 .frame(maxWidth: in3D ? 980 : 760)
+                .frame(maxHeight: pictureHeight > 0 ? pictureHeight : nil)
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { shownHeight.value = g.size.height }
+                        .onChange(of: g.size.height) { shownHeight.value = $0 }
+                })
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity)
                 HStack {
@@ -99,6 +111,7 @@ struct MainView: View {
                     .controlSize(.small)
                 }
             }
+            .overlay(alignment: .bottom) { resizeHandle }
             // The picture gets its room first; the mood tiles scroll.
             .layoutPriority(1)
 
@@ -127,7 +140,31 @@ struct MainView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 640, minHeight: 680)
+        .frame(minWidth: 640, maxWidth: .infinity, minHeight: 680, maxHeight: .infinity)
+    }
+
+    /// Drag the card's bottom edge up to make the keyboard smaller, so the
+    /// moods below fit without scrolling. Double-click to put it back.
+    private var resizeHandle: some View {
+        Capsule()
+            .fill(Color.primary.opacity(0.2))
+            .frame(width: 36, height: 5)
+            .frame(width: 90, height: 14)
+            .contentShape(Rectangle())
+            .offset(y: 7)
+            .onHover { inside in
+                if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+            }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { drag in
+                    let start = dragStart.value ?? shownHeight.value
+                    dragStart.value = start
+                    pictureHeight = Double(min(max(start + drag.translation.height, 180), 600))
+                }
+                .onEnded { _ in dragStart.value = nil })
+            .onTapGesture(count: 2) { pictureHeight = 0 }
+            .help("Drag to make the keyboard smaller or bigger. Double-click to reset.")
+            .accessibilityLabel("Keyboard picture size")
     }
 
     @ViewBuilder
@@ -469,9 +506,10 @@ enum LightingSimulator {
             hue = x - ts * 0.3
         case 12: // Reaction: dark until you type; only pressed keys light
             v = 0.04
-        case 13: // Sine wave: a wave rolling across
+        case 13: // Sine wave: every key lit, brighter along a rolling wave
             let wave = 0.5 + 0.4 * sin(x * 9 - ts * 3)
-            v = 0.1 + 0.9 * max(0, 1 - abs((1 - y) - wave) * 3)
+            v = 0.6 + 0.4 * max(0, 1 - abs((1 - y) - wave) * 3)
+            hue = x * 0.8 - ts * 0.15
         case 14: // Retinue scanning: a bar sweeping back and forth
             let bar = 0.5 + 0.5 * sin(ts * 1.5)
             v = 0.05 + 0.95 * max(0, 1 - abs(x - bar) * 7)

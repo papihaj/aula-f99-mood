@@ -180,7 +180,7 @@ for mood in wiped.moods { wiped.deleteMood(mood.id) }
 check(wiped.moods.isEmpty && wiped.activeMoodID == nil, "every mood can be deleted")
 let reset = AppSettings.defaults
 check(reset.moods.map(\.name) == AppSettings.builtInMoods.map(\.name), "reset brings the built-in moods back")
-check(reset.moods.filter { $0.live == nil }.count == 6 && reset.moods.filter { $0.live != nil }.count == 8,
+check(reset.moods.filter { $0.live == nil }.count == 7 && reset.moods.filter { $0.live != nil }.count == 8,
       "reset fills both mood grids")
 // "Restore built-in moods" puts back only what's missing, keeping your own.
 var partial = AppSettings.defaults
@@ -447,9 +447,11 @@ for i in 0..<60 {
 }
 check(litDimmest >= 40, "keys stay lit with the floor on: \(litDimmest)")
 
-// A new user gets no one else's choices: no start-up mood, and only the
-// example macro.
-check(AppSettings.defaults.startupMoodID == nil && AppSettings.defaults.macros.map(\.name) == ["Open Music"], "clean defaults")
+// A new user gets no one else's choices: no start-up mood, and only
+// examples that are switched off.
+check(AppSettings.defaults.startupMoodID == nil && AppSettings.defaults.macros.map(\.name) == ["Open Music"]
+      && AppSettings.defaults.macros.allSatisfy { $0.hotkey == nil }
+      && AppSettings.defaults.schedule.allSatisfy { !$0.enabled }, "clean defaults")
 
 // Settings from older and newer versions load without losing anything.
 let oldJSON = """
@@ -478,10 +480,10 @@ check(file.moods.first?.name == "Focus", "mood file round-trip")
 // Delete clears everything pointing at the mood.
 var del = AppSettings.defaults
 let gone = del.moods[1].id
-del.activeMoodID = gone; del.startupMoodID = gone
+del.activeMoodID = gone; del.startupMoodID = gone; del.awayMoodID = gone
 del.macros = [Macro(name: "m", hotkey: nil, action: .typeText, value: "hi", moodID: gone)]
 del.deleteMood(gone)
-check(del.activeMoodID == nil && del.startupMoodID == nil && del.macros[0].moodID == nil, "delete clears references")
+check(del.activeMoodID == nil && del.startupMoodID == nil && del.awayMoodID == nil && del.macros[0].moodID == nil, "delete clears references")
 check(del.addMissingBuiltInMoods() == 1 && del.moods.contains { $0.name == AppSettings.defaults.moods[1].name }, "restore built-in moods")
 
 // Shortcuts: duplicates are found, and a new one is free.
@@ -573,7 +575,7 @@ let pFrame = painter.render()
 let qKey = F99.keys.first { $0.name == "Q" }!.led
 check(pFrame[wLED * 3 + 2] > 150 && pFrame[wLED * 3] < 10, "painted key is blue")
 check(pFrame[qKey * 3] == 0 && pFrame[qKey * 3 + 2] == 0, "unpainted key is off")
-check(AppSettings.moodsVersion == 11, "moods version bumped")
+check(AppSettings.moodsVersion == 12, "moods version bumped")
 var oldUser = AppSettings.defaults
 oldUser.moods.removeAll { $0.name == "WASD" }; oldUser.moodsVersion = 5
 oldUser.upgradeMoods()

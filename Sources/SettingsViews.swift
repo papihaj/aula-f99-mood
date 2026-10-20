@@ -22,12 +22,14 @@ struct SettingsTab: View {
                                                                    set: { model.settings.pressGlow = $0; model.updatePressGlow() })) {
                     ForEach(PressGlow.allCases) { Text($0.rawValue).tag($0) }
                 }
+                .macMenu()
                 Picker(selection: Binding(get: { model.settings.stripStyle }, set: { model.setStrip(style: $0) })) {
                     ForEach(StripStyle.allCases) { Text($0.rawValue).tag($0) }
                 } label: {
                     Text("Light bar")
                     Text("Also on Home: click the bar on the picture. After the keyboard restarts, it stays green until you press Fn + Shift once.")
                 }
+                .macMenu()
                 if model.settings.stripStyle == .color {
                     ColorRow(color: Binding(get: { model.settings.stripColor },
                                             set: { model.setStrip(style: .color, color: min($0, F99.colors.count - 1)) }),
@@ -37,6 +39,7 @@ struct SettingsTab: View {
                     Text("Never").tag(0)
                     ForEach([1, 2, 5, 10, 15, 30], id: \.self) { Text("After \($0) min").tag($0) }
                 }
+                .macMenu()
                 Toggle("Lights off while locked", isOn: $model.settings.darkWhenLocked)
             }
             ScheduleSection()
@@ -52,6 +55,15 @@ struct SettingsTab: View {
                     Text("None").tag(UUID?.none)
                     ForEach(model.settings.moods) { Text($0.name).tag(UUID?.some($0.id)) }
                 }
+                .macMenu()
+                Picker(selection: $model.settings.awayMoodID) {
+                    Text("What it showed before").tag(UUID?.none)
+                    ForEach(model.settings.moods.filter { $0.live == nil }) { Text($0.name).tag(UUID?.some($0.id)) }
+                } label: {
+                    Text("When F99 Mood is closed")
+                    Text("Live moods need the app. The keyboard keeps this underneath, so it shows when you quit or unplug, also on other computers.")
+                }
+                .macMenu()
                 Picker("Appearance", selection: $model.settings.appearance) {
                     ForEach(Appearance.allCases) { Text($0.rawValue).tag($0) }
                 }
@@ -327,6 +339,8 @@ struct WelcomeView: View {
                     model.tourStep = 0
                 }
                 .keyboardShortcut(.defaultAction)
+                // Its own style, so the main button is lavender rather than the Mac's blue.
+                .buttonStyle(.borderedProminent)
             }
         }
         .padding(24)
@@ -375,6 +389,8 @@ struct TourCard: View {
                         if last { model.tourStep = nil; model.pane = .home } else { model.tourStep = step + 1 }
                     }
                     .keyboardShortcut(.defaultAction)
+                    // Its own style, so the main button is lavender rather than the Mac's blue.
+                    .buttonStyle(.borderedProminent)
                 }
             }
             .padding(16)
@@ -407,10 +423,11 @@ struct MacrosSection: View {
             }
             ForEach(model.settings.macros) { m in
                 HStack(spacing: 12) {
-                    Text(m.hotkey?.display ?? "No shortcut")
-                        .font(.system(.callout, design: .monospaced))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
+                    if let key = m.hotkey {
+                        KeycapBadge(hotkey: key)
+                    } else {
+                        Text("No shortcut").font(.caption).foregroundStyle(.secondary)
+                    }
                     VStack(alignment: .leading, spacing: 1) {
                         Text(m.name)
                         Text(summary(m)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -429,18 +446,13 @@ struct MacrosSection: View {
             if model.settings.macros.isEmpty {
                 Text("No macros yet.").foregroundStyle(.secondary)
             }
+            Button {
+                let m = Macro(name: "New macro", hotkey: nil, action: .typeText, value: "", moodID: nil)
+                model.settings.macros.append(m)
+                editing.value = m.id
+            } label: { Label("Add macro", systemImage: "plus") }
         } header: {
-            HStack {
-                Text("Macros")
-                Spacer()
-                Button {
-                    let m = Macro(name: "New macro", hotkey: nil, action: .typeText, value: "", moodID: nil)
-                    model.settings.macros.append(m)
-                    editing.value = m.id
-                } label: { Label("Add macro", systemImage: "plus") }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-            }
+            Text("Macros")
         }
         .sheet(isPresented: Binding(get: { editing.value != nil }, set: { if !$0 { editing.value = nil } })) {
             if let id = editing.value, let macro = model.settings.macros.first(where: { $0.id == id }) {
@@ -460,11 +472,15 @@ struct MacrosSection: View {
                         Spacer()
                         Button("Done") { editing.value = nil }
                             .keyboardShortcut(.defaultAction)
+                            // Its own style, so the main button is lavender rather than the Mac's blue.
+                            .buttonStyle(.borderedProminent)
                     }
                     .padding(14)
                 }
                 .frame(width: 520, height: 520)
                 .environmentObject(model)
+                // Sheets don't inherit the window's button style.
+                .buttonStyle(MacButtonStyle())
             }
         }
     }

@@ -535,7 +535,8 @@ struct MoreMoodsMenu: View {
                 message.value = n == 0 ? "All the built-in moods are already here."
                     : "Added back \(n) built-in mood\(n == 1 ? "" : "s")."
             }
-        } label: { Label("More", systemImage: "ellipsis.circle") }
+        } label: { Label("More", systemImage: "ellipsis") }
+        .menuIndicator(.hidden)
         .help("Hidden moods, import and export")
         .alert(message.value ?? "", isPresented: Binding(get: { message.value != nil }, set: { if !$0 { message.value = nil } })) {
             Button("OK") { message.value = nil }

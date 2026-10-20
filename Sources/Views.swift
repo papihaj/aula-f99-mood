@@ -126,6 +126,11 @@ struct MoodButton: View {
                         Image(systemName: mood.symbolName)
                             .font(.system(size: compact ? 13 : 15, weight: .semibold))
                         Spacer(minLength: 4)
+                        if mood.live != nil {
+                            Text("LIVE").font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                                .padding(.horizontal, 4).padding(.vertical, 1.5)
+                                .background(Capsule().fill(dark ? Color.black.opacity(0.3) : Color.white.opacity(0.7)))
+                        }
                         if active {
                             Image(systemName: "checkmark.circle.fill").font(.system(size: 14))
                                 .symbolRenderingMode(.palette).foregroundStyle(.white, Theme.lavender)
@@ -138,11 +143,6 @@ struct MoodButton: View {
                         Text(mood.name).font(.system(size: compact ? 11.5 : 12.5, weight: .semibold)).lineLimit(1)
                         if startup { Image(systemName: "power").font(.system(size: 9, weight: .bold)).help("Start-up mood") }
                         Spacer(minLength: 0)
-                        if mood.live != nil {
-                            Text("LIVE").font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                                .padding(.horizontal, 4).padding(.vertical, 1.5)
-                                .background(Capsule().fill(dark ? Color.black.opacity(0.3) : Color.white.opacity(0.7)))
-                        }
                     }
                 }
                 .foregroundStyle(Theme.ink)
@@ -196,7 +196,7 @@ struct TileButtonStyle: ButtonStyle {
 // MARK: Editor window
 
 /// The main window, laid out like System Settings: a sidebar of panes with
-/// coloured icons. Home is the keyboard picture, moods and music.
+/// outline icons. Home is the keyboard picture, moods and music.
 struct EditorView: View {
     @EnvironmentObject var model: AppModel
 
@@ -207,17 +207,9 @@ struct EditorView: View {
 
         var symbol: String {
             switch self {
-            case .home: "house.fill"
+            case .home: "house"
             case .music: "music.note"
-            case .settings: "gearshape.fill"
-            }
-        }
-
-        var tint: Color {
-            switch self {
-            case .home: Theme.lavender
-            case .music: .pink
-            case .settings: .gray
+            case .settings: "gearshape"
             }
         }
     }
@@ -244,14 +236,15 @@ struct EditorView: View {
         }
         .frame(minWidth: 980, minHeight: 680)
         // Editing a mood (from a tile, the panel or + New mood) opens over Home.
+        // Sheets don't inherit the window's button style, so each sets it.
         .sheet(isPresented: Binding(get: { model.editMoodRequest != nil },
                                     set: { if !$0 { model.editMoodRequest = nil } })) {
-            if let id = model.editMoodRequest { MoodEditorSheet(id: id).environmentObject(model) }
+            if let id = model.editMoodRequest { MoodEditorSheet(id: id).environmentObject(model).buttonStyle(MacButtonStyle()) }
         }
         .background {
             Color.clear.sheet(isPresented: Binding(get: { model.newMood != nil },
                                                    set: { if !$0 { model.cancelNewMood() } })) {
-                NewMoodSheet().environmentObject(model)
+                NewMoodSheet().environmentObject(model).buttonStyle(MacButtonStyle())
             }
         }
     }
@@ -262,17 +255,18 @@ struct EditorView: View {
             Label {
                 Text(p.rawValue).fontWeight(on ? .semibold : .regular)
             } icon: {
+                // Plain outline icons, all alike; the picked row is solid
+                // lavender with white text, like Keystro.
                 Image(systemName: p.symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(on ? p.tint : .white)
+                    .font(.system(size: 14, weight: .medium))
+                    // Set here too, or the sidebar paints icons the Mac's blue.
+                    .foregroundStyle(on ? Color.white : Color.primary)
                     .frame(width: 22, height: 22)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(p.tint.gradient)))
             }
             .foregroundStyle(on ? Color.white : Color.primary)
-            .padding(.horizontal, 6).padding(.vertical, 4)
+            .padding(.horizontal, 6).padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(on ? Theme.lavender : .clear))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Theme.lavender : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -321,6 +315,8 @@ struct MoodEditor: View {
             }
             Section {
                 TextField("Name", text: edit.name)
+                    // Return keeps the new name, like Save.
+                    .onSubmit { if !isNew, let d = draft.value { self.mood = d; draft.value = nil } }
                 if mood.name.trimmingCharacters(in: .whitespaces).isEmpty {
                     Text("Give the mood a name so you can tell it apart.").font(.caption).foregroundStyle(.red)
                 } else if model.settings.moods.filter({ $0.name == mood.name }).count > 1 {
@@ -328,6 +324,12 @@ struct MoodEditor: View {
                 }
                 LabeledContent("Icon") { SymbolPicker(mood: edit) }
                 Toggle("Show on Home and in the menu bar", isOn: Binding(get: { !mood.hidden }, set: { edit.wrappedValue.hidden = !$0 }))
+                if !isNew {
+                    // Not part of the draft: it's about which mood, not how it looks.
+                    Toggle("Start-up mood", isOn: Binding(get: { model.settings.startupMoodID == mood.id },
+                                                          set: { model.setStartupMood($0 ? mood.id : nil) }))
+                        .help("Switch to this mood whenever F99 Mood opens or the keyboard connects")
+                }
             }
             if mood.live == .painted {
                 Section("Painting") { PaintEditor(mood: edit) }
@@ -359,6 +361,7 @@ struct MoodEditor: View {
                         }
                     }
                 }
+                .macMenu()
                 if let live = mood.live {
                     Text("Runs while F99 Mood is open" + (live.reactsToTyping ? " · needs Accessibility" : ""))
                         .font(.caption).foregroundStyle(.secondary)
@@ -375,6 +378,7 @@ struct MoodEditor: View {
                         ForEach(MusicPalette.presets) { Text("Theme: \($0.name)").tag($0.name) }
                         Text("Theme: my custom colours").tag(MusicPalette.customName)
                     }
+                    .macMenu()
                     if mood.paletteName == MusicPalette.customName {
                         Text("Edit your custom colours under Music → Colour theme.").font(.caption).foregroundStyle(.secondary)
                     }
@@ -545,6 +549,10 @@ struct HotkeyPicker: View {
                             hotkey?.modifiers = mods
                         }))
                     .toggleStyle(.button)
+                    // Its own style, so a pressed key shows lavender and the
+                    // others grey.
+                    .buttonStyle(.automatic)
+                    .tint(key.modifiers & bit != 0 ? Theme.lavender : Color.secondary)
                     .accessibilityLabel(["⌃": "Control", "⌥": "Option", "⇧": "Shift", "⌘": "Command"][label] ?? label)
                 }
                 Picker("Key", selection: Binding(get: { key.keyCode }, set: { code in
@@ -555,6 +563,7 @@ struct HotkeyPicker: View {
                     ForEach(Keys.all, id: \.code) { Text($0.name).tag($0.code) }
                 }
                 .labelsHidden()
+                .macMenu()
                 .frame(width: 80)
             }
             if model.settings.duplicateHotkeys.contains(current) {
@@ -585,6 +594,7 @@ struct MacroEditor: View {
                 Picker("Action", selection: $macro.action) {
                     ForEach(Macro.Action.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
+                .macMenu()
                 if macro.action == .typeText {
                     VStack(alignment: .leading) {
                         Text("Text to type")
@@ -599,6 +609,7 @@ struct MacroEditor: View {
                     Text("Every mood").tag(UUID?.none)
                     ForEach(model.settings.moods) { Text("\($0.name) only").tag(UUID?.some($0.id)) }
                 }
+                .macMenu()
                 HotkeyPicker(hotkey: $macro.hotkey)
             }
             Section {
@@ -684,7 +695,7 @@ struct PaletteChooser: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 5), spacing: 6) {
                 ForEach(MusicPalette.presets + [model.settings.musicPalette.name == MusicPalette.customName
                                                 ? model.settings.musicPalette
                                                 : MusicPalette(name: MusicPalette.customName, colors: model.settings.customColors)]) { palette in
@@ -729,8 +740,8 @@ struct PaletteChooser: View {
                 Text(palette.name).font(.caption2).lineLimit(1)
             }
             .padding(4)
-            .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Color.accentColor.opacity(0.2) : .clear))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(selected ? Color.accentColor : Color.secondary.opacity(0.3),
+            .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Theme.lavender.opacity(0.2) : .clear))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(selected ? Theme.lavender : Color.secondary.opacity(0.3),
                                                               lineWidth: selected ? 1.5 : 0.5))
         }
         .buttonStyle(.plain)
@@ -796,7 +807,7 @@ struct SymbolPicker: View {
                         } label: {
                             Image(systemName: name).font(.system(size: 14))
                                 .frame(width: 30, height: 30)
-                                .background(RoundedRectangle(cornerRadius: 7).fill(mood.symbolName == name ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.05)))
+                                .background(RoundedRectangle(cornerRadius: 7).fill(mood.symbolName == name ? Theme.lavender.opacity(0.25) : Color.primary.opacity(0.05)))
                         }
                         .buttonStyle(.plain)
                         // "flame.fill" reads as "flame".

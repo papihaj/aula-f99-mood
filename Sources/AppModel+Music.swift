@@ -110,6 +110,7 @@ extension AppModel {
         streamSession += 1
         let session = streamSession
         let dim = currentDimLevel
+        let away = awayLighting
 
         pending += 1
         queue.async { [weak self] in
@@ -117,7 +118,7 @@ extension AppModel {
             let result = Result { () -> ConfigPage? in
                 guard toKeyboard else { return nil }
                 guard let kb = self.keyboard else { throw KeyboardError.notFound }
-                return try self.beginStream(kb, strip: strip)
+                return try self.beginStream(kb, strip: strip, away: away)
             }
             if case .success(let before) = result {
                 self.pageBeforeMusic = before
@@ -128,7 +129,6 @@ extension AppModel {
                 self.renderer.brightnessScale = 1
                 self.renderer.minimumBrightness = floor
                 self.colorCorrection = correction
-                self.lastFrame = []
                 self.streamFailures = 0
             }
             DispatchQueue.main.async {
@@ -147,18 +147,19 @@ extension AppModel {
         }
     }
 
-    /// Switch the keyboard to per-key mode and remember the lighting from
-    /// before, on disk too. Runs on `queue`.
-    nonisolated func beginStream(_ kb: Keyboard, strip: ConfigPage.Strip?) throws -> ConfigPage {
-        var before = try kb.enterStreamMode(strip: strip)
+    /// Get the keyboard ready to stream and return the lighting from before.
+    /// `away` goes on the keyboard underneath, so that's what it shows once
+    /// the Mac stops sending colours. Runs on `queue`.
+    nonisolated func beginStream(_ kb: Keyboard, strip: ConfigPage.Strip?, away: ConfigPage.Lighting?) throws -> ConfigPage {
+        var before = try kb.readSettings()
         if before.isStreamMode {
-            // Already per-key (say, a live mood resuming after a replug):
-            // the lighting to go back to is the one saved earlier.
+            // Left in per-key mode by an older version: go back to the
+            // lighting it saved then.
             before = [Storage.loadStreamBackup(), Storage.loadBackup()].compactMap { $0 }.first { !$0.isStreamMode }
                 ?? before
-        } else {
-            Storage.saveStreamBackup(before)
         }
+        try kb.prepareStream(base: away, saved: before, strip: strip)
+        Storage.clearStreamBackup()
         return before
     }
 
@@ -168,7 +169,6 @@ extension AppModel {
         guard let kb = keyboard, let before = pageBeforeMusic else { return nil }
         let page = try kb.restoreLighting(from: before)
         pageBeforeMusic = nil
-        Storage.clearStreamBackup()
         return page
     }
 
@@ -284,24 +284,19 @@ extension AppModel {
         push(frame, failureMessage: "Lost the keyboard while playing music.")
     }
 
-    /// Send a frame to the keyboard, if a stream session switched it into
-    /// per-key mode. Runs on `queue`.
+    /// Send a frame to the keyboard, if a stream session is on. Runs on `queue`.
     nonisolated func push(_ frame: [UInt8], failureMessage: String) {
         guard let kb = keyboard, pageBeforeMusic != nil else { return }
-        // Skip frames that didn't change, but resend every 2 s in case the
-        // keyboard repainted by itself.
         // Ease towards the dim level, over about half a second.
         if dimLevel != dimTarget {
             dimLevel = dimTarget > dimLevel ? min(dimTarget, dimLevel + 0.1) : max(dimTarget, dimLevel - 0.1)
         }
         var frame = frame
         if dimLevel < 1 { frame = frame.map { UInt8(Double($0) * dimLevel) } }
-        let now = Date()
-        guard frame != lastFrame || now.timeIntervalSince(lastSent) > 2 else { return }
+        // Every frame goes out, even unchanged ones: the keyboard's own
+        // effect runs underneath and would show through any gap.
         do {
             try kb.stream(colorCorrection ? frame.map { Self.gamma[Int($0)] } : frame)
-            lastFrame = frame
-            lastSent = now
             streamFailures = 0
         } catch {
             streamFailures += 1
@@ -369,10 +364,13 @@ extension AppModel {
         liveTimer?.cancel()
         liveTimer = nil
         let dark = lightingBeforeDark
+        let away = awayLighting
         let matchStrip = settings.stripStyle == .match && stripAlert == nil
         queue.sync {
             _ = try? endStream()
             if let dark, let kb = keyboard { _ = try? kb.apply(dark) }
+            // Leave the keyboard on the effect picked for while the app is closed.
+            if let away, let kb = keyboard { _ = try? kb.apply(away) }
             // Music and live moods colour the strip, but the keys go back to
             // the keyboard's own lighting: leave the strip matching that.
             if matchStrip, let kb = keyboard, let page = try? kb.readSettings(), let lighting = page.current {

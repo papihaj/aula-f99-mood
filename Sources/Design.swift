@@ -179,7 +179,7 @@ struct Card<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) { content }
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.panel))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.07)))
     }
 }
@@ -239,8 +239,8 @@ struct StatusPill: View {
 }
 
 /// The app's colours, taken from the white F99 with periwinkle and lavender
-/// keys: a white window (or a deep violet-grey one in dark mode), lavender for
-/// buttons and selections. The keyboard picture stays white in both, like
+/// keys: neutral white and grey (or near-black and dark grey in dark mode),
+/// with lavender as the one accent, for switches and selections. The keyboard picture stays white in both, like
 /// the real board.
 enum Theme {
     /// A colour for light mode and one for dark mode.
@@ -255,13 +255,13 @@ enum Theme {
     /// near-white on the dark theme's deep ones.
     static let ink = adaptive((0.16, 0.14, 0.26), (0.96, 0.95, 1.0))
     /// The side panel and chips.
-    static let panel = adaptive((1, 1, 1), (0.15, 0.14, 0.19))
+    static let panel = adaptive((1, 1, 1), (0.16, 0.16, 0.17))
     /// Picked keys in the 3D view glow this colour.
     static let pickedNS = NSColor(red: 0.55, green: 0.47, blue: 0.90, alpha: 1)
     static let lavender = Color(red: 0.55, green: 0.47, blue: 0.90)
     static let periwinkle = Color(red: 0.62, green: 0.74, blue: 0.93)
-    /// Behind the cards: white with a hint of lavender, or deep violet-grey.
-    static let page = adaptive((0.965, 0.96, 0.985), (0.10, 0.095, 0.13))
+    /// Behind the cards: light grey, or near-black.
+    static let page = adaptive((0.955, 0.955, 0.96), (0.09, 0.09, 0.095))
 
     /// Keycap colours as RGB, so the picture can blend light into them.
     static let whiteCap = RGB(0.975, 0.975, 0.99)
@@ -293,11 +293,25 @@ extension Color {
     func softened(_ amount: Double) -> Color { mixed(towards: (1, 1, 1), amount) }
 
     /// Mixed towards the dark theme's background, for tiles in dark mode.
-    func deepened(_ amount: Double) -> Color { mixed(towards: (0.10, 0.095, 0.13), amount) }
+    func deepened(_ amount: Double) -> Color { mixed(towards: (0.09, 0.09, 0.095), amount) }
 
     private func mixed(towards t: (Double, Double, Double), _ amount: Double) -> Color {
         guard let c = NSColor(self).usingColorSpace(.sRGB) else { return self }
         func mix(_ v: CGFloat, _ to: Double) -> Double { Double(v) + (to - Double(v)) * amount }
         return Color(red: mix(c.redComponent, t.0), green: mix(c.greenComponent, t.1), blue: mix(c.blueComponent, t.2))
     }
+}
+
+/// Plain push buttons as the Mac draws them, with black text. The app's
+/// lavender tint is for switches, sliders, picks and the main button of a
+/// window; without this, every button's text would turn lavender like a link.
+struct MacButtonStyle: PrimitiveButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button(configuration).buttonStyle(.automatic).tint(nil)
+    }
+}
+
+extension View {
+    /// Pop-up menus keep the Mac's black text instead of turning lavender.
+    func macMenu() -> some View { tint(nil) }
 }

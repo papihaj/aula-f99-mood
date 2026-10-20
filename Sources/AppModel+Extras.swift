@@ -27,8 +27,7 @@ extension AppModel {
     }
 
     /// Flash the whole keyboard a few times. On top of a live effect or the
-    /// music; with a keyboard effect on, the keyboard is switched to per-key
-    /// mode just for the flashes, then put back.
+    /// music; with a keyboard effect on, the flashes stream over it.
     func flash(color: RGB, times: Int) {
         let flash = Overlays.Flash(start: Date(), color: color, count: times)
         if musicOn || liveMood != nil {
@@ -42,8 +41,8 @@ extension AppModel {
         queue.async { [weak self] in
             guard let self else { return }
             var before: ConfigPage?
-            if toKeyboard, let kb = self.keyboard { before = try? self.beginStream(kb, strip: nil) }
-            if before != nil { self.pageBeforeMusic = before; self.colorCorrection = correction; self.lastFrame = [] }
+            if toKeyboard, let kb = self.keyboard { before = try? self.beginStream(kb, strip: nil, away: nil) }
+            if before != nil { self.pageBeforeMusic = before; self.colorCorrection = correction }
             var o = Overlays()
             o.flash = Overlays.Flash(start: Date(), color: color, count: times)
             let start = Date()

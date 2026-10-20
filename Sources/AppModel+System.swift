@@ -27,14 +27,22 @@ extension AppModel {
             MainActor.assumeIsolated { if !Self.screenLocked { self?.setDark(false) } }
         }
         // Sleep cuts the USB connection: end the stream first so the keyboard
-        // isn't left in per-key mode, and pick it up again after waking.
+        // is left on its own effect, and pick it up again after waking.
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.scheduleWaitsForKeyboard = true
                 self.resumeMusicAfterConnect = self.musicOn
+                let streaming = self.musicOn || self.liveMood != nil
                 if self.musicOn { self.stopMusic() }
                 if self.liveMood != nil { self.stopLive() }
+                // The keyboard may be unplugged while the Mac sleeps: leave
+                // it on the effect picked for while the app isn't running.
+                if streaming, let away = self.awayLighting {
+                    self.queue.async { [weak self] in
+                        if let kb = self?.keyboard { _ = try? kb.apply(away) }
+                    }
+                }
                 self.queue.sync {} // let the restore finish before sleeping
             }
         }

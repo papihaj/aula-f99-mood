@@ -13,7 +13,7 @@ the keys, the lighting and other settings of your F99 from a Mac.
 
 Website: [joharapurkar.com/f99](https://joharapurkar.com/f99)
 
-![The F99 Mood window, with the keyboard showing the Neon Cascade mood](screenshots/home.png)
+![The F99 Mood window, with the keyboard showing the Pastel Ripples mood](screenshots/home.png)
 
 | Moods | Music | Macros |
 |---|---|---|
@@ -51,12 +51,12 @@ You can install F99 Mood in one of two ways.
    so if nothing happens, try another cable. Then press Fn + Shift once, so
    the light strip can follow your moods. Do this again whenever the keyboard
    restarts.
-2. The welcome window lists three permissions. Click Open next to each one
+2. The welcome window lists three permissions. Click Turn on next to each one
    and turn on F99 Mood in the list that appears (see the next section). Then
    click Reopen F99 Mood.
 3. In the F99 Mood window, click a mood to change your keyboard's lighting.
 
-![The welcome window: plug in the keyboard, allow three permissions, pick how it starts](screenshots/setup.png)
+![The welcome window: plug in the keyboard and allow three permissions](screenshots/setup.png)
 
 After you pick a mood, the keyboard saves it, so you can unplug the cable and
 use Bluetooth. Moods that react to music or typing need the cable.

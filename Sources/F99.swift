@@ -88,8 +88,9 @@ enum F99 {
     ]
     static let colorful = 7
     /// Effects whose "colourful" setting is soft pastel on a real F99, not a
-    /// full rainbow: Flash away, Raindrops, Ripples shining, Retro snake.
-    static let pastelEffects: Set<Int> = [4, 5, 7, 10]
+    /// full rainbow: Flash away, Raindrops, Ripples shining, Retro snake and
+    /// Sine wave (seen on the user's keyboard, 2026-10-19).
+    static let pastelEffects: Set<Int> = [4, 5, 7, 10, 13]
 
     /// The light strip between Backspace and Num Lock isn't part of the live
     /// colour frame (it stays put while every free slot is set) and AULA's own

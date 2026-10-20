@@ -52,12 +52,14 @@ struct F99MoodApp: App {
         Window("F99 Mood", id: "main") {
             EditorView().environmentObject(model)
                 .tint(Theme.lavender)
+                .buttonStyle(MacButtonStyle())
         }
         .defaultSize(width: 980, height: 820)
 
         MenuBarExtra {
             MenuView().environmentObject(model)
                 .tint(Theme.lavender)
+                .buttonStyle(MacButtonStyle())
         } label: {
             Image(systemName: "keyboard")
         }

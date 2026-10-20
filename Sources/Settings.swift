@@ -331,6 +331,9 @@ struct AppSettings: Codable {
     var keysLitLevel = 0.5
     /// The mood switched on whenever the app starts or the keyboard connects.
     var startupMoodID: UUID?
+    /// The keyboard effect left on the keyboard when F99 Mood quits, since
+    /// live moods need the app. nil puts back what it showed before.
+    var awayMoodID: UUID?
     var pressGlow: PressGlow = .typingEffects
     var pressColor: PressColor = .lightest
     var pressCustomColor = RGB(hex: 0xffffff)
@@ -403,6 +406,7 @@ struct AppSettings: Codable {
         keepKeysLit = try c.decodeIfPresent(Bool.self, forKey: .keepKeysLit) ?? false
         startupMoodID = try c.decodeIfPresent(UUID.self, forKey: .startupMoodID)
         func opt<T: Decodable>(_ k: CodingKeys) -> T? { (try? c.decodeIfPresent(T.self, forKey: k)) ?? nil }
+        awayMoodID = opt(.awayMoodID)
         keysLitLevel = min(max(opt(.keysLitLevel) ?? 0.5, 0.2), 0.8)
         pressGlow = opt(.pressGlow) ?? .typingEffects
         pressColor = opt(.pressColor) ?? .lightest
@@ -456,6 +460,8 @@ struct AppSettings: Codable {
         mood("Ocean Waves",    "🌊", 13, /* Sine wave */     3, 1, 5, key: 21),
         mood("Rainbow",        "🌈", 11, /* Neon stream */   4, 2, 7, key: 22),
         mood("Pastel Rain",    "🌧️", 5,  /* Raindrops */     4, 3, 7, key: 23), // ⌃⌥5
+        // Colourful on Sine wave is soft pastel rainbow waves on a real F99.
+        mood("Colorful Rainbow Vibes", "💫", 13, /* Sine wave */ 4, 3, 7, key: 26), // ⌃⌥7
     ] + liveMoods
 
     /// Moods with live effects, in the style of other brands' popular ones.
@@ -532,15 +538,15 @@ struct AppSettings: Codable {
     /// Wheel becomes Rainbow on Neon stream (effect 6 leaves an F99's keys
     /// dark), Pastel Ripples, and Lights out gives way to the Off button.
     /// 11: Pastel Rain.
-    static let moodsVersion = 11
+    static let moodsVersion = 12
 
-    /// What a new user starts with: the built-in moods, no macros, and the
-    /// keyboard left on its own lighting until they pick a mood. Your own
-    /// choices live in your settings file, never in the app.
+    /// What a new user starts with: the built-in moods, examples that stay
+    /// off until you switch them on, and the keyboard left on its own
+    /// lighting until they pick a mood. Your own choices live in your
+    /// settings file, never in the app.
     static let defaults: AppSettings = {
-        // One example macro, so the Macros page shows what they do.
-        let openMusic = Macro(name: "Open Music", hotkey: Hotkey(keyCode: 46, modifiers: Hotkey.control | Hotkey.option), // ⌃⌥M
-                              action: .open, value: "Music", moodID: nil)
+        // An example macro with no shortcut, so it does nothing until you give it one.
+        let openMusic = Macro(name: "Open Music", hotkey: nil, action: .open, value: "Music", moodID: nil)
         var s = AppSettings(moods: builtInMoods, macros: [openMusic], activeMoodID: nil)
         s.moodsVersion = moodsVersion
         // Examples to switch on: a warm glow at night, Focus on weekday mornings.
@@ -566,7 +572,7 @@ struct AppSettings: Codable {
         if moodsVersion < 8 {
             for r in Self.retiredMoods {
                 for m in moods where m.name == r.name && m.lighting.effect == r.effect && m.live == r.live
-                    && m.id != startupMoodID && !schedule.contains(where: { $0.moodID == m.id }) {
+                    && m.id != startupMoodID && m.id != awayMoodID && !schedule.contains(where: { $0.moodID == m.id }) {
                     deleteMood(m.id)
                 }
             }
@@ -581,7 +587,7 @@ struct AppSettings: Codable {
             }
             // The Off button replaces Lights out.
             for m in moods where m.name == "Lights out" && m.live == nil && m.lighting.brightness == 0
-                && m.id != startupMoodID && !schedule.contains(where: { $0.moodID == m.id }) {
+                && m.id != startupMoodID && m.id != awayMoodID && !schedule.contains(where: { $0.moodID == m.id }) {
                 deleteMood(m.id)
             }
         }
@@ -651,6 +657,7 @@ struct AppSettings: Codable {
         moods.removeAll { $0.id == id }
         if activeMoodID == id { activeMoodID = nil }
         if startupMoodID == id { startupMoodID = nil }
+        if awayMoodID == id { awayMoodID = nil }
         for i in schedule.indices where schedule[i].moodID == id { schedule[i].moodID = nil }
         for i in macros.indices where macros[i].moodID == id { macros[i].moodID = nil }
     }
@@ -707,15 +714,10 @@ enum Storage {
         return try enc.encode(value)
     }
 
-    /// The lighting from before a live effect or music switched the keyboard
-    /// to per-key mode. That switch is saved on the keyboard, so if the app
-    /// can't switch it back (unplugged, crash, Force Quit), this file lets it
-    /// put things right the next time it connects.
+    /// The lighting from before older versions switched the keyboard to
+    /// per-key mode (saved on the keyboard). Only read now, to put a keyboard
+    /// left that way right; streaming no longer changes the mode.
     static let streamBackupURL = directory.appendingPathComponent("before-stream.bin")
-
-    static func saveStreamBackup(_ page: ConfigPage) {
-        try? Data(page.bytes).write(to: streamBackupURL, options: .atomic)
-    }
 
     static func loadStreamBackup() -> ConfigPage? {
         guard let data = try? Data(contentsOf: streamBackupURL) else { return nil }
