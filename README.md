@@ -10,6 +10,10 @@ the keys, the lighting and other settings of your F99 from a Mac.
 - **Macros:** set up shortcuts that type text for you or open an app.
 - **Extras:** switch moods on a schedule, flash the keys for new mail, and add
   typing sounds.
+- **Keeps your lighting:** pick an effect for when F99 Mood is closed. Your
+  keyboard keeps it when you quit, unplug it or use it with another computer.
+- **Menu bar:** dance to music, turn the lights off or switch to one of your
+  three most-used moods.
 
 Website: [joharapurkar.com/f99](https://joharapurkar.com/f99)
 
@@ -42,8 +46,8 @@ You can install F99 Mood in one of two ways.
    folder.
 3. Double-click F99 Mood in your Applications folder. The first time, your Mac
    says it can't check the app, because the app isn't from the App Store. Click
-   Done, open System Settings › Privacy & Security, scroll down and click Open
-   Anyway. You only need to do this once.
+   Done, open System Settings › Privacy & Security (called Privacy on macOS
+   27), scroll down and click Open Anyway. You only need to do this once.
 
 ## How to set it up
 
@@ -59,13 +63,15 @@ You can install F99 Mood in one of two ways.
 ![The welcome window: plug in the keyboard and allow three permissions](screenshots/setup.png)
 
 After you pick a mood, the keyboard saves it, so you can unplug the cable and
-use Bluetooth. Moods that react to music or typing need the cable.
+use Bluetooth. Moods that react to music or typing need the cable. When they
+stop, the keyboard shows the effect you picked under "When F99 Mood is
+closed" in Settings.
 
 ## Permissions
 
 Your Mac asks for each permission the first time you use a feature that needs
-it. To grant one, open System Settings › Privacy & Security, click the
-permission's name and turn on F99 Mood.
+it. To grant one, open System Settings › Privacy & Security (called Privacy
+on macOS 27), click the permission's name and turn on F99 Mood.
 
 | Permission | Why F99 Mood needs it |
 |---|---|
@@ -79,7 +85,7 @@ F99 Mood doesn't connect to the internet. Your settings stay on your Mac, in
 `~/Library/Application Support/F99 Mood`.
 
 If you turned a permission on but the app still asks, open the app's Settings
-and click Fix next to that permission.
+and click Turn on next to that permission.
 
 ## If something goes wrong
 

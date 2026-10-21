@@ -43,9 +43,9 @@ enum AudioError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .system(let what, let status):
-            return "Couldn't listen to your Mac's audio (\(what), error \(status)). Allow F99 Mood under System Settings → Privacy & Security → Screen & System Audio Recording."
+            return "Couldn't listen to your Mac's audio (\(what), error \(status)). Allow F99 Mood under System Settings → \(PrivacyPane.name) → Screen & System Audio Recording."
         case .microphoneDenied:
-            return "Microphone access is off. Allow F99 Mood under System Settings → Privacy & Security → Microphone."
+            return "Microphone access is off. Allow F99 Mood under System Settings → \(PrivacyPane.name) → Microphone."
         case .noMicrophone:
             return "This Mac has no microphone to listen with. Plug one in, or choose “Sound playing on this Mac” instead."
         }

@@ -13,7 +13,7 @@
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
 	<key>NSAudioCaptureUsageDescription</key><string>F99 Mood listens to the music playing on your Mac so your keyboard lights can move to it. The audio is never saved.</string>
 	<key>NSMicrophoneUsageDescription</key><string>F99 Mood listens to music in the room so your keyboard lights can move to it. The audio is never saved.</string>
-	<key>NSAppleEventsUsageDescription</key><string>F99 Mood asks Spotify or Music how far through the song you are, to show it on your keyboard.</string>
+	<key>NSAppleEventsUsageDescription</key><string>F99 Mood asks Spotify or Music how far through the song you are, to show it on your keyboard, and asks Mail how many messages are unread, to flash the keys for new mail.</string>
 	<key>NSHumanReadableCopyright</key><string>Unofficial. Not affiliated with AULA or Epomaker.</string>
 </dict>
 </plist>
