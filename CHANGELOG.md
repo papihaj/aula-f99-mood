@@ -14,6 +14,7 @@ The first release.
 - When F99 Mood is closed: pick a keyboard effect that stays on when you
   quit, unplug the keyboard or use it with another computer.
 - Colorful Rainbow Vibes: soft rainbow waves, one of the built-in moods.
+- Mood editor: the keyboard shows each effect as you pick it, before you save.
 - Menu bar: dance to music, lights off and your three most-used moods.
 - Music: the keys move with the music playing on your Mac or in the room.
 - Macros: shortcuts that type text or open an app. Macros never type into
