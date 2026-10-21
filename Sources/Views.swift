@@ -268,6 +268,14 @@ struct MoodEditor: View {
     /// Changes not saved yet. The editor is rebuilt for each mood, so this
     /// starts empty whenever another mood is picked.
     @StateObject private var draft = ViewState<Mood?>(nil)
+    @StateObject private var pendingPreview = ViewState<DispatchWorkItem?>(nil)
+
+    /// The parts of a mood that show on the keyboard.
+    private static func look(_ m: Mood) -> Mood {
+        var l = m
+        l.name = ""; l.emoji = ""; l.symbol = nil; l.hotkey = nil; l.apps = []; l.hidden = false
+        return l
+    }
 
     /// The mood as shown: unsaved changes if there are any.
     private var current: Mood { draft.value ?? mood }
@@ -419,9 +427,24 @@ struct MoodEditor: View {
             }
         }
         .formStyle(.grouped)
+        // Show changes to the look on the keyboard as you make them, a moment
+        // after the last one, so dragging a slider doesn't send every step.
+        .onChange(of: Self.look(current)) { _ in
+            pendingPreview.value?.cancel()
+            let shown = current
+            let work = DispatchWorkItem { [model] in model.apply(shown, preview: true) }
+            pendingPreview.value = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+        }
         .alert("Save your changes to “\(mood.name)”?", isPresented: $askToSave.value) {
             Button("Save") { if let d = draft.value { self.mood = d; draft.value = nil }; onClose?() }
-            Button("Don't Save", role: .destructive) { draft.value = nil; onClose?() }
+            Button("Don't Save", role: .destructive) {
+                pendingPreview.value?.cancel()
+                draft.value = nil
+                // The keyboard showed the unsaved changes: put the mood back.
+                if model.settings.activeMoodID == self.mood.id { model.apply(self.mood, preview: true) }
+                onClose?()
+            }
             Button("Cancel", role: .cancel) {}
         }
     }

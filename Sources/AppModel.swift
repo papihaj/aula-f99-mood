@@ -296,8 +296,10 @@ final class AppModel: ObservableObject {
     func turnOff() { apply(Self.offMood) }
     var isOff: Bool { settings.activeMoodID == Self.offMood.id }
 
-    func apply(_ mood: Mood) {
-        if settings.moods.contains(where: { $0.id == mood.id }) { settings.moodUses[mood.id.uuidString, default: 0] += 1 }
+    /// `preview`: the mood editor showing changes as you make them, which
+    /// doesn't count as using the mood.
+    func apply(_ mood: Mood, preview: Bool = false) {
+        if !preview, settings.moods.contains(where: { $0.id == mood.id }) { settings.moodUses[mood.id.uuidString, default: 0] += 1 }
         if mood.live != nil {
             startLive(mood)
             return
