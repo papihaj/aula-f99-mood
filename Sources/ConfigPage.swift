@@ -173,7 +173,7 @@ enum KeyboardError: LocalizedError {
         case .wirelessOnly:
             return "The F99 is connected through its 2.4 GHz receiver. Plug in the USB-C cable to change lighting."
         case .permissionDenied:
-            return "macOS blocked access. Allow F99 Mood under System Settings → \(PrivacyPane.name) → Input Monitoring, then reopen the app."
+            return "macOS blocked access. Allow F99 Mood under System Settings → \(PrivacySettings.paneName) → Input Monitoring, then reopen the app."
         case .io(let s):
             return "Keyboard communication failed: \(s)"
         case .badReply:

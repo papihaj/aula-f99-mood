@@ -170,12 +170,6 @@ enum Permission: CaseIterable, Identifiable {
 /// copy (the switch looks on but doesn't count), so: clear our entry, ask
 /// macOS again (which adds a fresh one), then open that list.
 enum PrivacyPane {
-    /// What System Settings calls the pane: "Privacy" from macOS 27 on.
-    static var name: String {
-        if #available(macOS 27, *) { return "Privacy" }
-        return "Privacy & Security"
-    }
-
     static func turnOn(service: String, pane: String, ask: () -> Void) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")

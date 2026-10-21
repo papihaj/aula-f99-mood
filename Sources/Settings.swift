@@ -689,6 +689,15 @@ struct MoodFile: Codable {
     }
 }
 
+/// What System Settings calls its privacy pane, for messages that send you
+/// there: "Privacy" from macOS 27 on, "Privacy & Security" before.
+enum PrivacySettings {
+    static var paneName: String {
+        if #available(macOS 27, *) { return "Privacy" }
+        return "Privacy & Security"
+    }
+}
+
 /// Settings live in ~/Library/Application Support/F99 Mood/.
 enum Storage {
     static let directory: URL = {
