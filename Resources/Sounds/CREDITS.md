@@ -11,6 +11,6 @@ and limited to 0.3 seconds.
 | Clicky | "Keyboard_Clicky_1–10" from the same pack | CC0 |
 | Soft | keypress-001–010 from [Keyboard Soundpack #1](https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes) by unicaegames (OpenGameArt) | CC0 |
 | Thocky | the Tactile takes, slowed, made much deeper and with the click filtered off (`Tools/make_thock.sh`) | CC0 |
-| Creamy | single presses cut from ["Typing Sentences with a Creamy Keyboard"](https://freesound.org/people/adamlenhart/sounds/868632/) by adamlenhart (freesound), with `Tools/slice_keystrokes.py` | CC0 |
+| Creamy | single presses cut from ["Typing Sentences with a Creamy Keyboard"](https://freesound.org/people/adamlenhart/sounds/868632/) by adamlenhart (freesound), with `Tools/slice_keystrokes.py`, keeping the presses with a clear click (some are only a thud) and lifting their body around 150 Hz | CC0 |
 | Creamy light | single presses cut from ["Typing on a rainy 75"](https://freesound.org/people/Techrul/sounds/815614/) by Techrul (freesound), the same way | CC0 |
 | Creamy soft | the Soft takes, a little deeper, smoothed and softened (`Tools/make_thock.sh`) | CC0 |

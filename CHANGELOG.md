@@ -4,9 +4,9 @@ What's new in each version of F99 Mood.
 
 ## 1.0.2 (22 October 2026)
 
-- Typing sounds: Creamy and Creamy light no longer make a deep, booming
-  sound on some key presses. The low rumble from the original recordings is
-  filtered out.
+- Typing sounds: Creamy and Creamy light no longer make a deep thud, like
+  a door closing, on some key presses. Those presses were swapped for ones
+  with a clear click from the same recordings.
 
 ## 1.0.1 (21 October 2026)
 
