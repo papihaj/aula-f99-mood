@@ -3,6 +3,21 @@
 # Usage: python3 Tools/slice_keystrokes.py typing.wav Resources/Sounds/<name> 10
 # (convert first: ffmpeg -i in.mp3 -ac 1 -ar 44100 -c:a pcm_s16le typing.wav)
 import sys, wave, numpy as np, os
+
+def highpass(x, sr, hz=120):
+    # Two 2-pole Butterworth high-pass filters: the recordings carry desk
+    # rumble below the click, which sounds like a deep boom once a take is
+    # turned up.
+    w = 2*np.pi*hz/sr; a = np.sin(w)/np.sqrt(2); c = np.cos(w)
+    b0, b1, b2 = (1+c)/2, -(1+c), (1+c)/2
+    a0, a1, a2 = 1+a, -2*c, 1-a
+    for _ in range(2):
+        y = np.zeros_like(x); x1 = x2 = y1 = y2 = 0.0
+        for i, v in enumerate(x):
+            y[i] = (b0*v + b1*x1 + b2*x2 - a1*y1 - a2*y2) / a0
+            x2, x1, y2, y1 = x1, v, y1, y[i]
+        x = y
+    return x
 src, out, n = sys.argv[1], sys.argv[2], int(sys.argv[3])
 w = wave.open(src); sr = w.getframerate()
 x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
@@ -33,7 +48,7 @@ mid = np.median(peaks) if peaks else 0
 pick = [c for c in cands[:n*3] if 0.5*mid < np.abs(c[2]).max() < 2*mid][:n]
 os.makedirs(out, exist_ok=True)
 for j, (_, t, seg) in enumerate(pick, 1):
-    seg = seg.copy()
+    seg = highpass(seg.copy(), sr)
     f = int(0.06*sr); seg[-f:] *= np.linspace(1, 0, f)
     seg[:pre] *= np.linspace(0, 1, pre)
     seg *= 10**(-3/20) / np.abs(seg).max()
