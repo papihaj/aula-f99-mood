@@ -60,10 +60,11 @@ struct ConfigPage: Equatable {
     var current: Lighting? { settings(for: effect) }
 
     /// Patch in `lighting`. Only the effect byte and that effect's two-byte
-    /// slot can change.
+    /// slot can change. Brightness may go up to 9, because some F99s store
+    /// that themselves and putting it back (after a lock) must not fail.
     mutating func apply(_ l: Lighting) throws {
         guard F99.effect(l.effect) != nil,
-              F99.brightnessLevels.contains(l.brightness),
+              F99.storedBrightness.contains(l.brightness),
               F99.speedLevels.contains(l.speed),
               (0...F99.colorful).contains(l.color),
               let at = Self.slotOffset(l.effect)

@@ -22,6 +22,9 @@ enum F99 {
 
     /// Brightness and speed levels, from `LightHW=` and `SpeedHW=`.
     static let brightnessLevels: ClosedRange<Int> = 0...4
+    /// Some F99s store up to 9 (seen in a Windows user's dumps and on the F75),
+    /// so the app writes such a value back but never offers it.
+    static let storedBrightness: ClosedRange<Int> = 0...9
     static let speedLevels: ClosedRange<Int> = 0...4
 
     struct Effect: Identifiable, Hashable {

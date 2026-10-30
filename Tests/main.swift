@@ -51,13 +51,20 @@ check(breathing.bytes[126...] == [0x5a, 0xa5], "end marker kept")
 for bad in [ConfigPage.Lighting(effect: 0, brightness: 1, speed: 1, color: 1),
             .init(effect: 19, brightness: 1, speed: 1, color: 1),
             .init(effect: 21, brightness: 1, speed: 1, color: 1),
-            .init(effect: 1, brightness: 5, speed: 1, color: 1),
+            .init(effect: 1, brightness: 10, speed: 1, color: 1),
             .init(effect: 1, brightness: 1, speed: 5, color: 1),
             .init(effect: 1, brightness: 1, speed: 1, color: 8)] {
     var p = page
     do { try p.apply(bad); check(false, "accepted \(bad)") } catch {}
     check(p == page, "page untouched after refusal")
 }
+
+// A brightness of 9 that the keyboard stored itself can be put back after
+// the lights were switched off (screen lock).
+var dimmed = page
+try! dimmed.apply(.init(effect: 1, brightness: 0, speed: 4, color: 0))
+do { try dimmed.apply(page.current!) } catch { check(false, "stored brightness 9 refused") }
+check(dimmed == page, "brightness 9 written back unchanged")
 
 // Every F99 effect's slot lies before the end marker.
 for e in F99.effects {
