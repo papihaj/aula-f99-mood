@@ -21,6 +21,7 @@ struct MenuView: View {
     /// most-used moods.
     var body: some View {
         Button("Open F99 Mood") {
+            model.applyDockSetting()
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -32,8 +33,13 @@ struct MenuView: View {
         Divider()
         ForEach(model.settings.mostUsedMoods(3)) { moodItem($0) }
         Divider()
-        Button("Quit F99 Mood") { NSApp.terminate(nil) }
-            .keyboardShortcut("q")
+        if model.inBackground {
+            Button("Quit completely (stops lights and sounds)") { model.quitCompletely() }
+                .keyboardShortcut("q")
+        } else {
+            Button("Quit F99 Mood") { NSApp.terminate(nil) }
+                .keyboardShortcut("q")
+        }
     }
 
     private func moodItem(_ mood: Mood) -> some View {

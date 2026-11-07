@@ -73,6 +73,7 @@ extension AppModel {
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
         try? p.run()
+        Self.quitForReal = true
         NSApp.terminate(nil)
     }
 
@@ -98,7 +99,32 @@ extension AppModel {
         }
     }
 
+    /// Called on Quit. Returns true if the app should really terminate; with
+    /// "Keep playing after Quit" and something running, it hides instead.
+    func shouldTerminate() -> Bool {
+        let needed = liveMood != nil || musicOn || settings.keySounds
+        guard settings.keepPlayingAfterQuit, needed, !Self.quitForReal else { return true }
+        hideToMenuBar()
+        return false
+    }
+
+    /// Really quit, stopping lights and sounds.
+    func quitCompletely() {
+        Self.quitForReal = true
+        NSApp.terminate(nil)
+    }
+
+    static var quitForReal = false
+
+    func hideToMenuBar() {
+        // The window title follows the page (Home, Settings…), so match by kind.
+        for w in NSApp.windows where w.isVisible && w.canBecomeMain { w.close() }
+        NSApp.setActivationPolicy(.accessory)
+        inBackground = true
+    }
+
     func applyDockSetting() {
+        inBackground = false
         NSApp?.setActivationPolicy(settings.showInDock ? .regular : .accessory)
     }
 

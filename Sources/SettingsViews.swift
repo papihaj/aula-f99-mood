@@ -70,6 +70,10 @@ struct SettingsTab: View {
                 .pickerStyle(.segmented)
                 Toggle("Show in the Dock", isOn: Binding(get: { model.settings.showInDock },
                                                          set: { model.setShowInDock($0) }))
+                Toggle(isOn: $model.settings.keepPlayingAfterQuit) {
+                    Text("Keep playing after Quit")
+                    Text("Quit hides the app, and live moods, music and typing sounds carry on from the menu bar. Use \"Quit completely\" there to stop them.")
+                }
             }
             Section("Keyboard") {
                 StatusLine()

@@ -25,6 +25,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var status: Status = .searching
     @Published private(set) var busy = false
     @Published var musicOn = false
+    /// Hidden but still running after Quit (see `keepPlayingAfterQuit`).
+    @Published var inBackground = false
+    /// For the app delegate, which handles Quit and reopen.
+    static weak var current: AppModel?
     /// The colours music mode is painting right now (R, G, B per LED slot),
     /// for the on-screen keyboard. Nil when music is off.
     /// Not @Published on purpose: it changes 20 times a second, and
@@ -122,6 +126,7 @@ final class AppModel: ObservableObject {
 
     init() {
         settings = Storage.load()
+        Self.current = self
         registerHotkeys()
         wasPresent = Keyboard.isPresent
         connect()

@@ -351,6 +351,9 @@ struct AppSettings: Codable {
     var darkWhenLocked = true
     /// Show the app in the Dock (it's always in the menu bar).
     var showInDock = true
+    /// Quitting (⌘Q) only hides the app while a live mood, music or typing
+    /// sounds are running, so they carry on from the menu bar.
+    var keepPlayingAfterQuit = false
     /// Start music mode when the app opens.
     var musicAtLaunch = false
     /// The welcome screen has been seen.
@@ -420,6 +423,7 @@ struct AppSettings: Codable {
         dimAfterMinutes = max(opt(.dimAfterMinutes) ?? 0, 0)
         darkWhenLocked = opt(.darkWhenLocked) ?? true
         showInDock = opt(.showInDock) ?? true
+        keepPlayingAfterQuit = opt(.keepPlayingAfterQuit) ?? false
         musicAtLaunch = opt(.musicAtLaunch) ?? false
         // A file saved before the welcome screen existed belongs to someone
         // who has already set the app up.

@@ -43,7 +43,27 @@ enum Main {
     }
 }
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model = AppModel.current else { return .terminateNow }
+        return model.shouldTerminate() ? .terminateNow : .terminateCancel
+    }
+
+    /// Opening the app again (Finder, Spotlight) while it's hidden shows the window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !flag, let model = AppModel.current, model.inBackground else { return true }
+        model.applyDockSetting()
+        if let w = NSApp.windows.first(where: { $0.canBecomeMain }) {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return false
+        }
+        return true
+    }
+}
+
 struct F99MoodApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
@@ -51,6 +71,7 @@ struct F99MoodApp: App {
         // in the menu bar; click the Dock icon or the menu bar icon to get it back.
         Window("F99 Mood", id: "main") {
             EditorView().environmentObject(model)
+                .onAppear { model.applyDockSetting() }
                 .tint(Theme.lavender)
                 .buttonStyle(MacButtonStyle())
         }
