@@ -66,7 +66,11 @@ final class AppModel: ObservableObject {
     /// Only touched on `queue`.
     nonisolated(unsafe) var keyboard: Keyboard?
     private var timer: Timer?
-    private var wasPresent = false
+    /// Whether the keyboard was there at the last check. Set to false when
+    /// the Mac sleeps, so the first check after waking reconnects.
+    var wasPresent = false
+    /// The Mac just woke: put the picked mood back once the keyboard is back.
+    var reassertAfterWake = false
 
     // Music mode. The analyzer, renderer and saved page are only touched on `queue`.
     var audio: AudioSource?
@@ -255,6 +259,7 @@ final class AppModel: ObservableObject {
                         // (unplugged, crash): put the lighting back first.
                         if page.isStreamMode && !self.musicOn && self.liveMood == nil { self.recoverFromStreamMode() }
                         self.resumeAfterConnect()
+                        self.restoreAfterWake()
                         if self.resumeMusicAfterConnect {
                             self.resumeMusicAfterConnect = false
                             self.startMusic()
@@ -379,6 +384,22 @@ final class AppModel: ObservableObject {
               !(liveMood?.id == mood.id && liveSessionToKeyboard) else { return }
         if liveMood != nil { stopLive() }
         apply(mood)
+    }
+
+    /// After waking (or a lost connection that left the lock dimming
+    /// unfinished): the keyboard may be showing the away effect or the dimmed
+    /// lock state. Put the picked keyboard mood back, or keep it for the unlock.
+    private func restoreAfterWake() {
+        defer { reassertAfterWake = false }
+        guard !musicOn, liveMood == nil, let mood = activeMood, mood.live == nil else { return }
+        if darkened {
+            lightingBeforeDark = mood.lighting
+        } else if reassertAfterWake || lightingBeforeDark != nil {
+            lightingBeforeDark = nil
+            let lighting = mood.lighting
+            let strip = strip(for: mood)
+            perform { try $0.apply(lighting, strip: strip) }
+        }
     }
 
     func setStartupMood(_ id: UUID?) { settings.startupMoodID = id }

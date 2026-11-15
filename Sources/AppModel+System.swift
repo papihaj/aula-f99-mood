@@ -32,6 +32,11 @@ extension AppModel {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.scheduleWaitsForKeyboard = true
+                self.reassertAfterWake = true
+                // The keyboard drops off USB while asleep, and the 3-second
+                // check never sees it go. Mark it gone so the first check
+                // after waking reconnects, however late USB comes back.
+                self.wasPresent = false
                 self.resumeMusicAfterConnect = self.musicOn
                 let streaming = self.musicOn || self.liveMood != nil
                 if self.musicOn { self.stopMusic() }
@@ -50,7 +55,10 @@ extension AppModel {
             // Give USB a moment to come back, then start afresh.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 guard let self else { return }
-                guard Keyboard.isPresent else { self.scheduleWaitsForKeyboard = false; return }
+                // Not back yet: the once-in-3-seconds check connects as soon
+                // as it appears. Hold the schedule until then.
+                guard Keyboard.isPresent else { return }
+                self.wasPresent = true
                 self.connect()
             }
         }
@@ -82,8 +90,9 @@ extension AppModel {
             off.brightness = 0
             perform { try $0.apply(off) }
         } else if let before = lightingBeforeDark {
-            lightingBeforeDark = nil
-            perform { try $0.apply(before) }
+            // Forget it only once it is on the keyboard: if the link is down,
+            // the reconnect puts it back (`restoreAfterWake`).
+            perform({ try $0.apply(before) }, then: { [weak self] in self?.lightingBeforeDark = nil })
         }
     }
 
